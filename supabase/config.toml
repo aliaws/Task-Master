@@ -1,0 +1,6 @@
+# https://supabase.com/docs/guides/functions/function-configuration
+
+[functions.sync-ghl]
+entrypoint = "../edge-functions/sync-ghl/index.js"
+# Set true if you call this with service role / cron only (no user JWT)
+verify_jwt = false

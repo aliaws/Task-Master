@@ -1,3 +1,4 @@
 .env
 edge-functions/*.json
+edge-functions/sync-task-ghl-localy.js
 /node_modules
