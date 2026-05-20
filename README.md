@@ -1,10 +1,10 @@
-# Task-Master — GHL Sync
+# Task-Master — GHL Sync & Kanban API
 
-One Supabase Edge Function **`sync-ghl`** syncs GoHighLevel contacts and tasks. Checkpoints in `sync_checkpoints` use `last_cursor` to resume.
+Supabase Edge Functions for GoHighLevel sync and the kanban task board API. Sync checkpoints in `sync_checkpoints` use `last_cursor` to resume.
 
 ## Deploy
 
-Source lives in `edge-functions/sync-ghl/`:
+**sync-ghl** — source in `edge-functions/sync-ghl/`:
 
 ```
 edge-functions/sync-ghl/
@@ -13,7 +13,8 @@ edge-functions/sync-ghl/
 ├── sync-ghl-contact-core.js
 ├── sync-ghl-tasks-core.js
 ├── sync-ghl-users-core.js        # GHL users → Supabase Auth
-├── sync-ghl-tasks-from-file-core.js
+├── sync-ghl-tasks-list-core.js
+├── task_list.js                  # TASK_LIST export (bundled with deploy)
 └── sync-ghl-task-boards.js       # status map from task_boards
 ```
 
@@ -21,7 +22,21 @@ edge-functions/sync-ghl/
 supabase functions deploy sync-ghl
 ```
 
-## API
+**kanban** — source in `edge-functions/kanban.js`:
+
+```bash
+supabase functions deploy kanban
+```
+
+Requires `SUPABASE_DB_URL` on the function (direct Postgres connection).
+
+## Recommended sync order (fresh project)
+
+1. `?sync=contacts` — populate `contacts`
+2. `?sync=users` — map GHL users to Auth (`user_metadata.ghl_id`)
+3. `?sync=tasks_list` **or** `?sync=tasks` — import tasks (bundled list vs live GHL API)
+
+## sync-ghl API
 
 Base URL (replace `{{Supabase_ID}}` with your project ref):
 
@@ -34,7 +49,7 @@ https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl
 | `?sync=contacts` | GHL contacts → `contacts` table |
 | `?sync=tasks` | `contacts` table → GHL tasks → `tasks` table |
 | `?sync=users` | GHL users → Supabase Auth (`user_metadata.ghl_id`) |
-| `?sync=tasks_from_file` | `tasks.json` → `tasks` table (no GHL API) |
+| `?sync=tasks_list` | `TASK_LIST` in `task_list.js` → `tasks` table (no GHL API) |
 | `?sync=all` | Contacts, then tasks (default if `sync` omitted) |
 
 Examples:
@@ -43,7 +58,7 @@ Examples:
 GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=contacts
 GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=tasks
 GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=users
-GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=tasks_from_file
+GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=tasks_list
 GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=all
 ```
 
@@ -77,6 +92,22 @@ Supports **GET** and **POST**. Invalid `sync` returns `400` with allowed values.
     "totalContactsProcessed": 500,
     "lastCursor": "uuid-of-last-contact",
     "tasksDone": false
+  }
+}
+```
+
+**tasks_list**
+
+```json
+{
+  "success": true,
+  "sync": "tasks_list",
+  "tasks": {
+    "success": true,
+    "totalInList": 3788,
+    "synced": 3500,
+    "skipped": 288,
+    "done": true
   }
 }
 ```
@@ -138,13 +169,13 @@ WHERE key = 'ghl_task_sync';
 
 Run before task sync so `assigned_to` can be resolved.
 
-### Tasks from file (`sync=tasks_from_file`)
+### Tasks from list (`sync=tasks_list`)
 
-1. Read `tasks.json` (array of GHL-shaped tasks).
+1. Import `TASK_LIST` from `edge-functions/sync-ghl/task_list.js` (JavaScript module, not JSON).
 2. Resolve `contactId` → `contacts.id` via `contacts.ghl_id`.
-3. Upsert into `tasks` on `ghl_id`.
+3. Upsert into `tasks` on `ghl_id` in batches of 200.
 
-Place the file at **`edge-functions/sync-ghl/tasks.json`** before deploy (the function bundle only includes `sync-ghl/`). Local runs also check `edge-functions/tasks.json`.
+Regenerate `task_list.js` from your export when tasks change; redeploy `sync-ghl` so the bundle includes the updated list.
 
 Example task shape:
 
@@ -181,6 +212,43 @@ RPCs: `get_token_health`, `get_vault_secrets`.
 
 Call the function repeatedly until `caughtUp` / `tasksDone` are true. Each invocation advances checkpoints; large datasets may need many cron hits to avoid timeouts.
 
+## kanban API
+
+Base URL:
+
+```
+https://{{Supabase_ID}}.supabase.co/functions/v1/kanban
+```
+
+**POST** only. Returns tasks grouped by `task_boards.name`.
+
+### Request body
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `page` | number | `1` | Page number |
+| `limit` | number | `20` | Tasks per board column |
+| `order` | `"ASC"` \| `"DESC"` | `"DESC"` | Sort by `created_at` |
+| `status_id` | number | — | Optional: load a single board |
+| `filters` | object | — | Column filters, e.g. `{ "priority": { "value": "High" } }` |
+
+Example:
+
+```json
+{
+  "page": 1,
+  "limit": 20,
+  "order": "DESC",
+  "filters": {
+    "priority": { "value": "Medium" }
+  }
+}
+```
+
+### Response shape
+
+Top-level keys are board names; each value has `id`, `meta` (`count`, `page`, `limit`, `order`, `has_more`), and `data` (task rows with `contact`, `time_spent`, `time_spent_in_words`).
+
 ## Other edge functions
 
-`edge-functions/` also contains unrelated functions (`kanban.js`, `refresh-token.js`, etc.). Only `sync-ghl/` is the unified GHL sync entrypoint.
+`edge-functions/` also contains `refresh-token.js`, `task-timer.js`, and local scripts (`sync-task-ghl-localy.js`). GHL sync is centralized in **`sync-ghl`**; task board reads use **`kanban`**.

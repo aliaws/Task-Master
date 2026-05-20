@@ -84,8 +84,7 @@ const getTasks = async (
         'id', c.id,
         'first_name', c.first_name,
         'last_name', c.last_name,
-        'email', c.email,
-        'avatar_url', c.avatar_url
+        'email', c.email
       ) AS contact,
 
       COALESCE(SUM(ts.duration_seconds), 0)::double precision AS time_spent

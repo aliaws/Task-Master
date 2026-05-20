@@ -13,6 +13,6 @@ export const SYNC_MODES = [
   "contacts",
   "tasks",
   "users",
-  "tasks_from_file",
+  "tasks_list",
   "all",
 ];

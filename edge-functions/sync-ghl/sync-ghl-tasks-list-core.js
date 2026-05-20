@@ -1,37 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { TASK_LIST } from "./task_list.js";
 import { loadUserMap } from "./sync-ghl-users-core.js";
 import { loadTaskStatusMap } from "./sync-ghl-task-boards.js";
 import { transformTask } from "./sync-ghl-tasks-core.js";
+
+const UPSERT_BATCH_SIZE = 200;
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL"),
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
 );
-
-const TASKS_FILE_PATHS = [
-  new URL("./tasks.json", import.meta.url),
-  new URL("../tasks.json", import.meta.url),
-];
-
-async function loadTasksJson() {
-  for (const path of TASKS_FILE_PATHS) {
-    try {
-      const text = await Deno.readTextFile(path);
-      const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed)) {
-        throw new Error("tasks.json must be a JSON array");
-      }
-      return parsed;
-    } catch (e) {
-      if (e instanceof Deno.errors.NotFound) continue;
-      throw e;
-    }
-  }
-
-  throw new Error(
-    "tasks.json not found. Place it in edge-functions/tasks.json or edge-functions/sync-ghl/tasks.json"
-  );
-}
 
 async function loadContactMap(ghlContactIds) {
   if (!ghlContactIds.length) return {};
@@ -50,8 +28,24 @@ async function loadContactMap(ghlContactIds) {
   return map;
 }
 
-export async function syncTasksFromFile() {
-  const tasks = await loadTasksJson();
+async function upsertTaskBatches(rows) {
+  let synced = 0;
+
+  for (let i = 0; i < rows.length; i += UPSERT_BATCH_SIZE) {
+    const chunk = rows.slice(i, i + UPSERT_BATCH_SIZE);
+    const { error } = await supabase
+      .from("tasks")
+      .upsert(chunk, { onConflict: "ghl_id" });
+
+    if (error) throw error;
+    synced += chunk.length;
+  }
+
+  return synced;
+}
+
+export async function syncTasksFromList() {
+  const tasks = TASK_LIST;
   const [userMap, statusMap] = await Promise.all([
     loadUserMap(),
     loadTaskStatusMap(),
@@ -80,18 +74,12 @@ export async function syncTasksFromFile() {
     batch.push(transformTask(task, contactRow, userMap, statusMap));
   }
 
-  if (batch.length) {
-    const { error } = await supabase
-      .from("tasks")
-      .upsert(batch, { onConflict: "ghl_id" });
-
-    if (error) throw error;
-  }
+  const synced = batch.length ? await upsertTaskBatches(batch) : 0;
 
   return {
     success: true,
-    totalInFile: tasks.length,
-    synced: batch.length,
+    totalInList: tasks.length,
+    synced,
     skipped,
     done: true,
   };
