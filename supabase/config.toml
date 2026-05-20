@@ -4,3 +4,11 @@
 entrypoint = "../edge-functions/sync-ghl/index.js"
 # Set true if you call this with service role / cron only (no user JWT)
 verify_jwt = false
+
+[functions.tasks]
+entrypoint = "../edge-functions/tasks/index.js"
+verify_jwt = false
+
+[functions.kanban]
+entrypoint = "../edge-functions/kanban.js"
+verify_jwt = false

@@ -1,0 +1,97 @@
+export const JSON_HEADERS = { "Content-Type": "application/json" };
+
+export function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: JSON_HEADERS,
+  });
+}
+
+export function formatHMS(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${hours} hour, ${minutes} minutes, ${secs} seconds`;
+}
+
+/** "John Doe" -> "JD", "Madonna" -> "M" */
+export function initialsFromDisplayName(displayName) {
+  if (!displayName || typeof displayName !== "string") return null;
+
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts.length === 1) {
+    return parts[0].charAt(0).toUpperCase();
+  }
+
+  return parts.map((p) => p.charAt(0).toUpperCase()).join("");
+}
+
+export function buildAssignee(row) {
+  if (!row?.assigned_id) return null;
+
+  const displayName = row.assignee_display_name || null;
+
+  return {
+    id: row.assigned_id,
+    display_name: displayName,
+    initials: initialsFromDisplayName(displayName),
+  };
+}
+
+export function buildContact(row) {
+  if (!row?.contact_id) return null;
+
+  return {
+    id: row.contact_id,
+    name: row.contact_name || null,
+    email: row.contact_email || null,
+  };
+}
+
+export function buildStatus(row) {
+  if (!row?.status_id) return null;
+
+  return {
+    id: row.status_id,
+    name: row.status_name || null,
+  };
+}
+
+export function parsePagination(body) {
+  const page = Math.max(1, Number(body.page ?? 1) || 1);
+  const limit = Math.min(100, Math.max(1, Number(body.limit ?? 20) || 20));
+  const offset = (page - 1) * limit;
+
+  return { page, limit, offset };
+}
+
+const SORT_COLUMNS = {
+  created_at: "tb.created_at",
+  updated_at: "tb.updated_at",
+  due_date: "tb.due_date",
+  priority: "tb.priority",
+  title: "tb.title",
+};
+
+export function parseSort(body) {
+  const sortBy = SORT_COLUMNS[body.sort_by] ? body.sort_by : "created_at";
+  const order = body.order === "ASC" ? "ASC" : "DESC";
+
+  return { sortBy, order, column: SORT_COLUMNS[sortBy] };
+}
+
+export function paginationMeta({ count, page, limit, sortBy, order }) {
+  const totalPages = count > 0 ? Math.ceil(count / limit) : 0;
+
+  return {
+    count,
+    page,
+    limit,
+    total_pages: totalPages,
+    has_more: page < totalPages,
+    sort_by: sortBy,
+    order,
+  };
+}
