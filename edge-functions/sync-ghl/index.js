@@ -6,6 +6,8 @@ import {
 } from "./sync-constants.js";
 import { getToken, syncContacts, vault } from "./sync-ghl-contact-core.js";
 import { syncTasks } from "./sync-ghl-tasks-core.js";
+import { syncUsers } from "./sync-ghl-users-core.js";
+import { syncTasksFromFile } from "./sync-ghl-tasks-from-file-core.js";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
@@ -22,6 +24,16 @@ function parseSyncMode(req) {
 }
 
 async function runSync(mode, accessToken, locationId) {
+  if (mode === "users") {
+    const users = await syncUsers(accessToken, locationId);
+    return { success: true, sync: "users", users };
+  }
+
+  if (mode === "tasks_from_file") {
+    const tasks = await syncTasksFromFile();
+    return { success: true, sync: "tasks_from_file", tasks };
+  }
+
   if (mode === "contacts") {
     const contacts = await syncContacts(
       accessToken,
@@ -60,7 +72,6 @@ serve(async (req) => {
   }
 
   const mode = parseSyncMode(req);
-  console.log('mode', mode);
 
   if (!SYNC_MODES.includes(mode)) {
     return jsonResponse(
@@ -70,6 +81,8 @@ serve(async (req) => {
         usage: {
           contacts: "/functions/v1/sync-ghl?sync=contacts",
           tasks: "/functions/v1/sync-ghl?sync=tasks",
+          users: "/functions/v1/sync-ghl?sync=users",
+          tasks_from_file: "/functions/v1/sync-ghl?sync=tasks_from_file",
           all: "/functions/v1/sync-ghl?sync=all",
         },
       },
@@ -78,6 +91,11 @@ serve(async (req) => {
   }
 
   try {
+    if (mode === "tasks_from_file") {
+      const result = await runSync(mode);
+      return jsonResponse(result);
+    }
+
     const v = await vault();
     const token = await getToken();
 

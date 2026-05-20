@@ -8,10 +8,13 @@ Source lives in `edge-functions/sync-ghl/`:
 
 ```
 edge-functions/sync-ghl/
-├── index.js                 # HTTP entry (routes ?sync=)
+├── index.js                      # HTTP entry (routes ?sync=)
 ├── sync-constants.js
 ├── sync-ghl-contact-core.js
-└── sync-ghl-tasks-core.js
+├── sync-ghl-tasks-core.js
+├── sync-ghl-users-core.js        # GHL users → Supabase Auth
+├── sync-ghl-tasks-from-file-core.js
+└── sync-ghl-task-boards.js       # status map from task_boards
 ```
 
 ```bash
@@ -30,6 +33,8 @@ https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl
 |-------|--------|
 | `?sync=contacts` | GHL contacts → `contacts` table |
 | `?sync=tasks` | `contacts` table → GHL tasks → `tasks` table |
+| `?sync=users` | GHL users → Supabase Auth (`user_metadata.ghl_id`) |
+| `?sync=tasks_from_file` | `tasks.json` → `tasks` table (no GHL API) |
 | `?sync=all` | Contacts, then tasks (default if `sync` omitted) |
 
 Examples:
@@ -37,6 +42,8 @@ Examples:
 ```
 GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=contacts
 GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=tasks
+GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=users
+GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=tasks_from_file
 GET https://{{Supabase_ID}}.supabase.co/functions/v1/sync-ghl?sync=all
 ```
 
@@ -102,7 +109,7 @@ WHERE key = 'ghl_contact_sync';
 
 -- tasks
 UPDATE sync_checkpoints
-SET last_cursor = NULL, total_contacts_processed = 0, total_tasks = 0
+SET last_cursor = NULL, total_contacts_processed = 0, total_saved_tasks = 0
 WHERE key = 'ghl_task_sync';
 ```
 
@@ -123,6 +130,39 @@ WHERE key = 'ghl_task_sync';
 5. Save last processed `contacts.id` in `last_cursor`.
 
 **Run contact sync before task sync** on a fresh project.
+
+### Users (`sync=users`)
+
+1. GET GHL `/users/?locationId=…`.
+2. Create or update Supabase Auth users by email; store `ghl_id` in `user_metadata`.
+
+Run before task sync so `assigned_to` can be resolved.
+
+### Tasks from file (`sync=tasks_from_file`)
+
+1. Read `tasks.json` (array of GHL-shaped tasks).
+2. Resolve `contactId` → `contacts.id` via `contacts.ghl_id`.
+3. Upsert into `tasks` on `ghl_id`.
+
+Place the file at **`edge-functions/sync-ghl/tasks.json`** before deploy (the function bundle only includes `sync-ghl/`). Local runs also check `edge-functions/tasks.json`.
+
+Example task shape:
+
+```json
+{
+  "id": "EXWCtKrL6mvWOue5Uesc",
+  "title": "Follow up — gauge interest in Voice AI services",
+  "body": "…",
+  "assignedTo": "5I9tCZVzWgTPG4AUwURz",
+  "dueDate": "2026-05-19T17:00:00.000Z",
+  "completed": true,
+  "contactId": "HuDlvKcwaVcZzvwPm4US"
+}
+```
+
+### Task status mapping
+
+`status_id` is not hard-coded. The function loads `task_boards` (`id`, `is_completed`) and maps `completed: true` → the board with `is_completed = true`, and `completed: false` → the board with `is_completed = false`.
 
 ### All (`sync=all`)
 

@@ -9,9 +9,10 @@ export const GHL_API_VERSION = "2021-07-28";
 export const CONTACT_PAGE_LIMIT = 100;
 export const TASK_CONTACT_BATCH_SIZE = 50;
 
-export const TASK_STATUS_MAP = {
-  true: 4,
-  false: 1,
-};
-
-export const SYNC_MODES = ["contacts", "tasks", "all"];
+export const SYNC_MODES = [
+  "contacts",
+  "tasks",
+  "users",
+  "tasks_from_file",
+  "all",
+];

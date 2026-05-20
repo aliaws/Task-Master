@@ -4,8 +4,9 @@ import {
   GHL_API_VERSION,
   GHL_BASE_URL,
   TASK_CONTACT_BATCH_SIZE,
-  TASK_STATUS_MAP,
 } from "./sync-constants.js";
+import { loadUserMap } from "./sync-ghl-users-core.js";
+import { loadTaskStatusMap } from "./sync-ghl-task-boards.js";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL"),
@@ -28,7 +29,7 @@ async function getTaskCheckpoint(checkpointKey = CHECKPOINT_KEY_TASK) {
   return {
     lastCursor: hasSavedCursor(data) ? data.last_cursor : null,
     totalContactsProcessed: data?.total_contacts_processed || 0,
-    totalTasksSaved: data?.total_tasks || 0,
+    totalTasksSaved: data?.total_saved_tasks || 0,
     isInitialSync: !hasSavedCursor(data),
   };
 }
@@ -43,7 +44,7 @@ async function saveTaskCheckpoint({
     key: checkpointKey,
     last_cursor: lastCursor,
     total_contacts_processed: totalContactsProcessed,
-    total_tasks: totalTasksSaved,
+    total_saved_tasks: totalTasksSaved,
   };
 
   const { data: existing, error: readError } = await supabase
@@ -109,30 +110,7 @@ async function fetchTasksFromGhl(ghlContactId, token) {
   return data.tasks ?? [];
 }
 
-async function loadUserMap() {
-  const url = Deno.env.get("SUPABASE_URL");
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-  const res = await fetch(`${url}/auth/v1/admin/users`, {
-    headers: {
-      Authorization: `Bearer ${key}`,
-      apikey: key,
-    },
-  });
-
-  const json = await res.json();
-  const users = json?.users ?? [];
-  const map = {};
-
-  for (const u of users) {
-    const ghlId = u?.user_metadata?.ghl_id;
-    if (ghlId) map[ghlId] = u.id;
-  }
-
-  return map;
-}
-
-function transformTask(task, contactRow, userMap) {
+export function transformTask(task, contactRow, userMap, statusMap) {
   const assignedUUID = userMap[task.assignedTo] ?? null;
 
   return {
@@ -145,7 +123,7 @@ function transformTask(task, contactRow, userMap) {
     contact_id: contactRow.id,
     due_date: task.dueDate || null,
     ghl_id: task.id,
-    status_id: TASK_STATUS_MAP[String(task.completed)],
+    status_id: statusMap[String(task.completed)],
     assigned_to: assignedUUID,
     updated_at: new Date().toISOString(),
   };
@@ -156,7 +134,10 @@ export async function syncTasks(
   checkpointKey = CHECKPOINT_KEY_TASK
 ) {
   const checkpoint = await getTaskCheckpoint(checkpointKey);
-  const userMap = await loadUserMap();
+  const [userMap, statusMap] = await Promise.all([
+    loadUserMap(),
+    loadTaskStatusMap(),
+  ]);
   const seenTasks = new Set();
 
   let lastCursor = checkpoint.lastCursor;
@@ -186,7 +167,7 @@ export async function syncTasks(
       for (const task of tasks) {
         if (!task?.id || seenTasks.has(task.id)) continue;
         seenTasks.add(task.id);
-        batch.push(transformTask(task, contact, userMap));
+        batch.push(transformTask(task, contact, userMap, statusMap));
       }
 
       await updateContactTaskCount(contact.id, tasks.length);
