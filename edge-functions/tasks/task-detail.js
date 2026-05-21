@@ -1,15 +1,8 @@
 import { sql } from "./db.js";
-import {
-  buildAssignee,
-  buildContact,
-  buildStatus,
-  formatHMS,
-} from "./utils.js";
+import { buildAssignee, buildContact, buildStatus } from "./utils.js";
 import { TASK_FROM_JOINS, TASK_SELECT_CORE } from "./query.js";
 
 function mapDetailRow(row) {
-  const timeSpent = Number(row.time_spent);
-
   return {
     id: row.id,
     title: row.title,
@@ -20,8 +13,6 @@ function mapDetailRow(row) {
     assigned_to: buildAssignee(row),
     due_date: row.due_date,
     ghl_id: row.ghl_id,
-    time_spent: timeSpent,
-    time_spent_in_words: formatHMS(timeSpent),
     created_at: row.created_at,
     updated_at: row.updated_at,
     subtasks: row.subtasks ?? [],

@@ -90,9 +90,17 @@ export function parseListFilters(body) {
   };
 }
 
-export async function buildListWhere(filters) {
+/** True when list filters need the completed board id from the database. */
+export function needsCompletedStatusId(filters) {
+  return (
+    filters.completed === true ||
+    filters.completed === false ||
+    filters.due === "overdue"
+  );
+}
+
+export function buildListWhere(filters, completedStatusId) {
   const parts = [];
-  const completedStatusId = await getCompletedStatusId();
 
   if (filters.status?.length) {
     parts.push(sql`tb.status_id IN ${sql(filters.status)}`);
@@ -137,22 +145,11 @@ export function buildOrderClause(sortColumn, order) {
   return sql`ORDER BY ${sql.unsafe(sortColumn)} ${dir}`;
 }
 
-/** Pre-aggregated sessions — avoids row explosion from joining task_sessions per row. */
-const TASK_TIME_SPENT_JOIN = sql`
-  LEFT JOIN (
-    SELECT
-      task_id,
-      COALESCE(SUM(duration_seconds), 0)::double precision AS time_spent
-    FROM public.task_sessions
-    GROUP BY task_id
-  ) ts ON ts.task_id = tb.id
-`;
-
 export const TASK_FROM_JOINS = sql`
   FROM public.tasks tb
   LEFT JOIN public.task_boards b ON b.id = tb.status_id
   LEFT JOIN public.contacts c ON c.id = tb.contact_id
-  ${TASK_TIME_SPENT_JOIN}
+  LEFT JOIN auth.users u ON u.id = tb.assigned_to
 `;
 
 export const TASK_SELECT_CORE = sql`
@@ -172,24 +169,18 @@ export const TASK_SELECT_CORE = sql`
     c.email
   ) AS contact_name,
   c.email AS contact_email,
-  tb.assigned_to AS assigned_id,
-  (
-    SELECT COALESCE(
-      NULLIF(
-        TRIM(
-          CONCAT_WS(
-            ' ',
-            u.raw_user_meta_data->>'first_name',
-            u.raw_user_meta_data->>'last_name'
-          )
-        ),
-        ''
+  u.id AS assigned_id,
+  COALESCE(
+    NULLIF(
+      TRIM(
+        CONCAT_WS(
+          ' ',
+          u.raw_user_meta_data->>'first_name',
+          u.raw_user_meta_data->>'last_name'
+        )
       ),
-      split_part(u.email, '@', 1)
-    )
-    FROM auth.users u
-    WHERE u.id = tb.assigned_to
-    LIMIT 1
-  ) AS assignee_display_name,
-  COALESCE(ts.time_spent, 0)::double precision AS time_spent
+      ''
+    ),
+    split_part(u.email, '@', 1)
+  ) AS assignee_display_name
 `;

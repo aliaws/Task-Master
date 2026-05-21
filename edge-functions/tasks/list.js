@@ -3,7 +3,6 @@ import {
   buildAssignee,
   buildContact,
   buildStatus,
-  formatHMS,
   paginationMeta,
   parsePagination,
   parseSort,
@@ -11,14 +10,14 @@ import {
 import {
   buildListWhere,
   buildOrderClause,
+  getCompletedStatusId,
+  needsCompletedStatusId,
   parseListFilters,
   TASK_FROM_JOINS,
   TASK_SELECT_CORE,
 } from "./query.js";
 
 function mapListRow(row) {
-  const timeSpent = Number(row.time_spent);
-
   return {
     id: row.id,
     title: row.title,
@@ -29,8 +28,6 @@ function mapListRow(row) {
     assigned_to: buildAssignee(row),
     due_date: row.due_date,
     ghl_id: row.ghl_id,
-    time_spent: timeSpent,
-    time_spent_in_words: formatHMS(timeSpent),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -40,8 +37,12 @@ export async function handleList(body) {
   const { page, limit, offset } = parsePagination(body);
   const { sortBy, order, column } = parseSort(body);
   const filters = parseListFilters(body);
-  const whereExtra = await buildListWhere(filters);
   const orderClause = buildOrderClause(column, order);
+
+  const completedStatusId = needsCompletedStatusId(filters)
+    ? await getCompletedStatusId()
+    : null;
+  const whereExtra = buildListWhere(filters, completedStatusId);
 
   const countRows = await sql`
     SELECT COUNT(*)::int AS count
