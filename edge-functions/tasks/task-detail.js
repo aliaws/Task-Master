@@ -49,20 +49,6 @@ export async function handleTaskDetail(body) {
       tb.tags
     ${TASK_FROM_JOINS}
     WHERE tb.id = ${taskIdInt}
-    GROUP BY
-      tb.id,
-      tb.subtasks,
-      tb.attachments,
-      tb.tags,
-      b.id,
-      b.name,
-      c.id,
-      c.first_name,
-      c.last_name,
-      c.email,
-      u.id,
-      u.email,
-      u.raw_user_meta_data
     LIMIT 1
   `;
 

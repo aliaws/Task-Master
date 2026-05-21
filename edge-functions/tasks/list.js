@@ -44,8 +44,8 @@ export async function handleList(body) {
   const orderClause = buildOrderClause(column, order);
 
   const countRows = await sql`
-    SELECT COUNT(DISTINCT tb.id)::int AS count
-    ${TASK_FROM_JOINS}
+    SELECT COUNT(*)::int AS count
+    FROM public.tasks tb
     WHERE 1 = 1
     ${whereExtra}
   `;
@@ -57,17 +57,6 @@ export async function handleList(body) {
     ${TASK_FROM_JOINS}
     WHERE 1 = 1
     ${whereExtra}
-    GROUP BY
-      tb.id,
-      b.id,
-      b.name,
-      c.id,
-      c.first_name,
-      c.last_name,
-      c.email,
-      u.id,
-      u.email,
-      u.raw_user_meta_data
     ${orderClause}
     LIMIT ${limit}
     OFFSET ${offset}

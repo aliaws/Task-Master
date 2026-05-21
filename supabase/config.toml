@@ -10,5 +10,5 @@ entrypoint = "../edge-functions/tasks/index.js"
 verify_jwt = false
 
 [functions.kanban]
-entrypoint = "../edge-functions/kanban.js"
+entrypoint = "../edge-functions/tasks/index.js"
 verify_jwt = false

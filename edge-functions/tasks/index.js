@@ -16,6 +16,8 @@ function parseAction(req, body) {
 }
 
 Deno.serve(async (req) => {
+  let action;
+
   try {
     if (req.method !== "POST") {
       return jsonResponse(
@@ -25,7 +27,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const action = parseAction(req, body);
+    action = parseAction(req, body);
 
     if (!ACTIONS.includes(action)) {
       return jsonResponse(
