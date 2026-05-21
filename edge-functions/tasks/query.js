@@ -257,5 +257,13 @@ export const TASK_SELECT_CORE = sql`
       ''
     ),
     split_part(u.email, '@', 1)
-  ) AS assignee_display_name
+  ) AS assignee_display_name,
+  COALESCE(
+    (
+      SELECT SUM(ts.duration_seconds)
+      FROM public.task_sessions ts
+      WHERE ts.task_id = tb.id
+    ),
+    0
+  )::double precision AS time_spent
 `;

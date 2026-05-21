@@ -59,6 +59,15 @@ export function buildStatus(row) {
   };
 }
 
+/** Same shape as kanban: seconds + human-readable string. */
+export function buildTimeSpent(row) {
+  const time_spent = Number(row?.time_spent ?? 0);
+  return {
+    time_spent,
+    time_spent_in_words: formatHMS(time_spent),
+  };
+}
+
 export function parsePagination(body) {
   const page = Math.max(1, Number(body.page ?? 1) || 1);
   const limit = Math.min(100, Math.max(1, Number(body.limit ?? 20) || 20));

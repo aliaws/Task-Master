@@ -62,6 +62,9 @@ edge-functions/tasks/
 ├── task-detail.js
 ├── boards-action.js
 ├── tags-action.js
+├── contacts-action.js    # action: contacts — lookup / autocomplete
+├── users-action.js       # action: users — assignee lookup
+├── lookup-utils.js
 ├── query.js              # list filters + SQL
 ├── utils.js
 └── db.js
@@ -82,6 +85,8 @@ Requires **`SUPABASE_DB_URL`** on the function.
 | `task_detail` | One task by integer `id` + subtasks, attachments, tags |
 | `boards` | Integer `task_boards.id` for filter dropdowns |
 | `tags` | Autocomplete via `search_tags()` |
+| `contacts` | Contact lookup: autocomplete or `search_column` + `search_operator` |
+| `users` | Assignee lookup (`auth.users`): same filter modes as `contacts` |
 
 Example:
 
@@ -89,6 +94,8 @@ Example:
 POST https://{{Supabase_ID}}.supabase.co/functions/v1/tasks
 { "action": "list", "page": 1, "limit": 20, "sort_by": "created_at", "order": "DESC" }
 ```
+
+**Sample data** (tags, assignees, optional contacts): [sample-data/](sample-data/)
 
 ---
 

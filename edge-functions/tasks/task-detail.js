@@ -1,5 +1,10 @@
 import { sql } from "./db.js";
-import { buildAssignee, buildContact, buildStatus } from "./utils.js";
+import {
+  buildAssignee,
+  buildContact,
+  buildStatus,
+  buildTimeSpent,
+} from "./utils.js";
 import { TASK_FROM_JOINS, TASK_SELECT_CORE } from "./query.js";
 
 function mapDetailRow(row) {
@@ -15,6 +20,7 @@ function mapDetailRow(row) {
     ghl_id: row.ghl_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    ...buildTimeSpent(row),
     subtasks: row.subtasks ?? [],
     attachments: row.attachments ?? [],
     tags: row.tags ?? [],

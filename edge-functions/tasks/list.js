@@ -3,6 +3,7 @@ import {
   buildAssignee,
   buildContact,
   buildStatus,
+  buildTimeSpent,
   paginationMeta,
   parsePagination,
   parseSort,
@@ -30,6 +31,7 @@ function mapListRow(row) {
     ghl_id: row.ghl_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    ...buildTimeSpent(row),
   };
 }
 

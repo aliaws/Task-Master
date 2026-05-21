@@ -1,6 +1,6 @@
 # Tasks API
 
-Single edge function **`tasks`** exposes board, list, detail, and tag autocomplete actions via **POST**. Use **`action`** in the JSON body or query string (`?action=list`). Default action is **`kanban`**.
+Single edge function **`tasks`** exposes board, list, detail, lookup (contacts, users, tags), and boards actions via **POST**. Use **`action`** in the JSON body or query string (`?action=list`). Default action is **`kanban`**.
 
 **Base URL**
 
@@ -202,15 +202,19 @@ Single task with subtasks, attachments, and tags.
 
 ### Response
 
-Same fields as list, plus:
+Same fields as list (including `time_spent` and `time_spent_in_words` from `task_sessions`), plus:
 
 ```json
 {
+  "time_spent": 3600,
+  "time_spent_in_words": "1 hour, 0 minutes, 0 seconds",
   "subtasks": [],
   "attachments": [],
   "tags": ["voice-ai", "follow-up"]
 }
 ```
+
+`time_spent` is total `duration_seconds` summed from `public.task_sessions` (same as kanban).
 
 ---
 
@@ -272,6 +276,135 @@ After bulk task import, populate the catalog and `task_tags` links:
 SELECT * FROM public.sync_tags_from_tasks();
 -- returns tags_inserted, links_inserted
 ```
+
+Dev sample tags/assign SQL: `sample-data/` in the repo root.
+
+---
+
+## 6. `contacts` (lookup)
+
+Search `public.contacts` for filter dropdowns and assignee pickers. Use **`filters`** to choose mode.
+
+### Autocomplete (prefix match on display name)
+
+```json
+{
+  "action": "contacts",
+  "q": "mar",
+  "limit": 20,
+  "filters": { "autocomplete": true }
+}
+```
+
+### Column search
+
+```json
+{
+  "action": "contacts",
+  "q": "riverside",
+  "limit": 20,
+  "filters": {
+    "search_column": "email",
+    "search_operator": "contains"
+  }
+}
+```
+
+| `filters` field | Type | Description |
+|-----------------|------|-------------|
+| `autocomplete` | boolean | `true` → prefix search on display name (name or email) |
+| `search_column` | string | `name` (default), `email`, `phone`, `first_name`, `last_name` |
+| `search_operator` | string | `starts_with` \| `contains` \| `ends_with` (default `contains`) |
+
+Empty `q` returns up to `limit` rows sorted by display name.
+
+### Response
+
+```json
+{
+  "success": true,
+  "action": "contacts",
+  "data": [
+    {
+      "id": "a1b2c3d4-e5f6-4789-a012-345678901001",
+      "display_name": "Maria Lopez",
+      "email": "maria.lopez@riverside-properties.com",
+      "phone": "+1-555-014-2201",
+      "first_name": "Maria",
+      "last_name": "Lopez"
+    }
+  ],
+  "meta": {
+    "mode": "autocomplete",
+    "q": "mar",
+    "limit": 20,
+    "count": 1
+  }
+}
+```
+
+---
+
+## 7. `users` (lookup)
+
+Search **`auth.users`** (assignees synced from GHL). Same filter pattern as `contacts`.
+
+### Autocomplete
+
+```json
+{
+  "action": "users",
+  "q": "sar",
+  "limit": 20,
+  "filters": { "autocomplete": true }
+}
+```
+
+### Column search
+
+```json
+{
+  "action": "users",
+  "q": "mitchell",
+  "limit": 20,
+  "filters": {
+    "search_column": "name",
+    "search_operator": "contains"
+  }
+}
+```
+
+| `filters` field | Type | Description |
+|-----------------|------|-------------|
+| `autocomplete` | boolean | `true` → prefix search on display name |
+| `search_column` | string | `name` (default) or `email` |
+| `search_operator` | string | `starts_with` \| `contains` \| `ends_with` (default `contains`) |
+
+### Response
+
+```json
+{
+  "success": true,
+  "action": "users",
+  "data": [
+    {
+      "id": "auth-user-uuid",
+      "display_name": "Sarah Mitchell",
+      "email": "sarah.mitchell@acme-hvac.local"
+    }
+  ],
+  "meta": {
+    "mode": "search",
+    "q": "mitchell",
+    "search_column": "name",
+    "search_operator": "contains",
+    "limit": 20,
+    "count": 1
+  }
+}
+```
+
+Use returned `id` values in `list` filters: `filters.assign` (UUID array).
 
 ---
 

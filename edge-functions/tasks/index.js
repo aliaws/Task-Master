@@ -3,9 +3,19 @@ import { handleBoards } from "./boards-action.js";
 import { handleList } from "./list.js";
 import { handleTaskDetail } from "./task-detail.js";
 import { handleTagsSearch } from "./tags-action.js";
+import { handleContactsLookup } from "./contacts-action.js";
+import { handleUsersLookup } from "./users-action.js";
 import { jsonResponse } from "./utils.js";
 
-const ACTIONS = ["kanban", "list", "task_detail", "tags", "boards"];
+const ACTIONS = [
+  "kanban",
+  "list",
+  "task_detail",
+  "tags",
+  "boards",
+  "contacts",
+  "users",
+];
 
 function parseAction(req, body) {
   const url = new URL(req.url);
@@ -40,6 +50,8 @@ Deno.serve(async (req) => {
             task_detail: "?action=task_detail",
             tags: "?action=tags",
             boards: "?action=boards",
+            contacts: "?action=contacts",
+            users: "?action=users",
           },
         },
         400
@@ -58,6 +70,10 @@ Deno.serve(async (req) => {
       result = await handleTaskDetail(body);
     } else if (action === "tags") {
       result = await handleTagsSearch(body);
+    } else if (action === "contacts") {
+      result = await handleContactsLookup(body);
+    } else if (action === "users") {
+      result = await handleUsersLookup(body);
     }
 
     return jsonResponse({ success: true, action, ...result });
