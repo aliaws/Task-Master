@@ -18,18 +18,24 @@ export async function getCompletedStatusId() {
   return completedStatusIdCache;
 }
 
-function toIntArray(values, label) {
-  if (!Array.isArray(values) || values.length === 0) return null;
+function asArray(values) {
+  if (values == null) return null;
+  return Array.isArray(values) ? values : [values];
+}
 
-  const ids = values.map((v) => Number(v)).filter((n) => Number.isInteger(n));
+function toIntArray(values, label) {
+  const input = asArray(values);
+  if (!input || input.length === 0) return null;
+
+  const ids = input.map((v) => Number(v)).filter((n) => Number.isInteger(n));
 
   if (ids.length === 0) {
     throw new Error(
-      `${label} must be an array of integers (e.g. task_boards.id from action "boards").`
+      `${label} must be an integer or array of integers (e.g. task_boards.id from action "boards").`
     );
   }
 
-  if (ids.length !== values.length) {
+  if (ids.length !== input.length) {
     throw new Error(`${label} contains non-integer value(s).`);
   }
 
@@ -37,9 +43,10 @@ function toIntArray(values, label) {
 }
 
 function toUuidArray(values, label) {
-  if (!Array.isArray(values) || values.length === 0) return null;
+  const input = asArray(values);
+  if (!input || input.length === 0) return null;
 
-  const ids = values.map(String).filter((id) => UUID_RE.test(id));
+  const ids = input.map(String).filter((id) => UUID_RE.test(id));
 
   if (ids.length === 0) {
     throw new Error(
@@ -47,34 +54,85 @@ function toUuidArray(values, label) {
     );
   }
 
-  if (ids.length !== values.length) {
+  if (ids.length !== input.length) {
     throw new Error(`${label} contains invalid UUID(s).`);
   }
 
   return ids;
 }
 
+const TITLE_MATCH_MODES = new Set([
+  "starts_with",
+  "contains",
+  "ends_with",
+]);
+
+function normalizeTitleMatch(mode) {
+  if (mode == null || mode === "") return "contains";
+
+  const key = String(mode).trim().toLowerCase().replace(/-/g, "_");
+  const aliases = {
+    startswith: "starts_with",
+    endswith: "ends_with",
+  };
+
+  const normalized = aliases[key] ?? key;
+  if (!TITLE_MATCH_MODES.has(normalized)) {
+    throw new Error(
+      'filters.title_match must be "starts_with", "contains", or "ends_with".'
+    );
+  }
+  return normalized;
+}
+
+function escapeLikePattern(value) {
+  return String(value).replace(/[%_\\]/g, "\\$&");
+}
+
+function parsePriority(value) {
+  if (value == null || value === "") return null;
+  const s = String(value).trim();
+  return s || null;
+}
+
+function parseTitleSearch(raw) {
+  const title =
+    raw.title != null && String(raw.title).trim() !== ""
+      ? String(raw.title).trim()
+      : null;
+  if (!title) return null;
+
+  return {
+    title,
+    match: normalizeTitleMatch(raw.title_match),
+  };
+}
+
 /** assign_to may be auth user UUID (column type uuid, not tasks PK). */
 function toAssignArray(values) {
-  if (!Array.isArray(values) || values.length === 0) return null;
+  const input = asArray(values);
+  if (!input || input.length === 0) return null;
 
-  const uuids = values.map(String).filter((id) => UUID_RE.test(id));
-  if (uuids.length === values.length) return uuids;
+  const uuids = input.map(String).filter((id) => UUID_RE.test(id));
+  if (uuids.length === input.length) return uuids;
 
-  const ints = values.map((v) => Number(v)).filter((n) => Number.isInteger(n));
-  if (ints.length === values.length) return ints;
+  const ints = input.map((v) => Number(v)).filter((n) => Number.isInteger(n));
+  if (ints.length === input.length) return ints;
 
   throw new Error(
     "filters.assign must be auth user UUIDs or integer ids, depending on your assigned_to column."
   );
 }
 
+/** Joins SQL fragments with AND; use after `WHERE 1 = 1`. */
 function combineAnd(parts) {
   if (!parts.length) return sql``;
 
-  return parts.reduce(
-    (acc, part, i) => (i === 0 ? sql`AND ${part}` : sql`${acc} AND ${part}`)
-  );
+  let result = parts[0];
+  for (let i = 1; i < parts.length; i++) {
+    result = sql`${result} AND ${parts[i]}`;
+  }
+  return sql` AND ${result}`;
 }
 
 export function parseListFilters(body) {
@@ -84,6 +142,8 @@ export function parseListFilters(body) {
     status: toIntArray(raw.status, "filters.status"),
     assign: toAssignArray(raw.assign),
     contacts: toUuidArray(raw.contacts, "filters.contacts"),
+    priority: parsePriority(raw.priority),
+    titleSearch: parseTitleSearch(raw),
     due: raw.due ?? null,
     completed:
       raw.completed === true || raw.completed === false ? raw.completed : null,
@@ -106,12 +166,27 @@ export function buildListWhere(filters, completedStatusId) {
     parts.push(sql`tb.status_id IN ${sql(filters.status)}`);
   }
 
+  if (filters.priority) {
+    parts.push(sql`tb.priority = ${filters.priority}`);
+  }
+
   if (filters.assign?.length) {
     parts.push(sql`tb.assigned_to IN ${sql(filters.assign)}`);
   }
 
   if (filters.contacts?.length) {
     parts.push(sql`tb.contact_id IN ${sql(filters.contacts)}`);
+  }
+
+  if (filters.titleSearch) {
+    const escaped = escapeLikePattern(filters.titleSearch.title);
+    const pattern =
+      filters.titleSearch.match === "starts_with"
+        ? `${escaped}%`
+        : filters.titleSearch.match === "ends_with"
+          ? `%${escaped}`
+          : `%${escaped}%`;
+    parts.push(sql`tb.title ILIKE ${pattern}`);
   }
 
   if (filters.completed === true && completedStatusId != null) {

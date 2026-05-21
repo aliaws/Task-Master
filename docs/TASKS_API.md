@@ -1,20 +1,12 @@
 # Tasks API
 
-Single edge function **`tasks`** (and legacy deploy name **`kanban`**) exposes board, list, detail, and tag autocomplete actions via **POST**.
+Single edge function **`tasks`** exposes board, list, detail, and tag autocomplete actions via **POST**. Use **`action`** in the JSON body or query string (`?action=list`). Default action is **`kanban`**.
 
 **Base URL**
 
 ```
 https://{{Supabase_ID}}.supabase.co/functions/v1/tasks
 ```
-
-Legacy kanban URL (same handler):
-
-```
-https://{{Supabase_ID}}.supabase.co/functions/v1/kanban
-```
-
-Set **`action`** in the JSON body or query string (`?action=list`). Default action is **`kanban`** (unchanged board behaviour).
 
 ### ID types in this API
 
@@ -41,8 +33,6 @@ Requires **`SUPABASE_DB_URL`** on the function.
 
 ```bash
 supabase functions deploy tasks
-# optional legacy alias:
-supabase functions deploy kanban
 ```
 
 Apply tags schema:
@@ -113,6 +103,9 @@ Flat paginated task list for tables / mobile list views.
   "order": "DESC",
   "filters": {
     "status": [1, 2],
+    "priority": "High",
+    "title": "Call",
+    "title_match": "contains",
     "assign": ["auth-user-uuid-if-used"],
     "contacts": ["550e8400-e29b-41d4-a716-446655440000"],
     "due": "overdue",
@@ -125,11 +118,23 @@ Flat paginated task list for tables / mobile list views.
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `status` | int[] | **`task_boards.id`** (integer), from `boards` or `kanban` |
-| `assign` | uuid[] or int[] | `tasks.assigned_to` (auth UUIDs from sync, or ints if your column is int) |
-| `contacts` | uuid[] | **`contacts.id` only** (UUID) |
+| `status` | int or int[] | **`task_boards.id`** (integer), from `boards` or `kanban` |
+| `priority` | string | Exact match on `tasks.priority` (e.g. `"High"`, `"Medium"`, `"Low"`) |
+| `title` | string | Case-insensitive search on `tasks.title` (see `title_match`) |
+| `title_match` | string | How `title` is matched: `starts_with` \| `contains` \| `ends_with` (default `contains`) |
+| `assign` | uuid or uuid[] / int or int[] | `tasks.assigned_to` (auth UUIDs from sync, or ints if your column is int) |
+| `contacts` | uuid or uuid[] | **`contacts.id` only** (UUID) |
 | `due` | string | `today` \| `overdue` \| `coming` (by `due_date`) |
 | `completed` | boolean | `true` = only completed board; `false` = exclude completed board |
+
+**Title search**
+
+- `title` — non-empty string to search for (`%` and `_` in the value are escaped)
+- `title_match` — optional; defaults to `contains`
+  - `starts_with` — title begins with the string
+  - `contains` — title includes the string anywhere
+  - `ends_with` — title ends with the string
+- Matching uses `ILIKE` (case-insensitive)
 
 **Due filters**
 

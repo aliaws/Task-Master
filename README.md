@@ -50,26 +50,25 @@ edge-functions/sync-ghl/
 supabase functions deploy sync-ghl
 ```
 
-### tasks / kanban
+### tasks
 
-Source: `edge-functions/tasks/` (same entrypoint for both function names)
+Source: `edge-functions/tasks/` — one function, multiple actions via `action` in the body.
 
 ```
 edge-functions/tasks/
 ├── index.js              # POST router (?action= or body.action)
-├── kanban-action.js      # board columns (unchanged behaviour)
-├── list.js               # flat paginated list
+├── kanban-action.js      # action: kanban — board columns
+├── list.js               # action: list — flat paginated list
 ├── task-detail.js
 ├── boards-action.js
 ├── tags-action.js
-├── query.js
+├── query.js              # list filters + SQL
 ├── utils.js
 └── db.js
 ```
 
 ```bash
 supabase functions deploy tasks
-supabase functions deploy kanban   # optional alias → same code
 ```
 
 Requires **`SUPABASE_DB_URL`** on the function.
@@ -78,8 +77,8 @@ Requires **`SUPABASE_DB_URL`** on the function.
 
 | Action | Purpose |
 |--------|---------|
-| `kanban` | Tasks grouped by `task_boards.name` (legacy) |
-| `list` | Paginated list; filters: `status`, `assign`, `contacts`, `due`, `completed` |
+| `kanban` | Tasks grouped by `task_boards.name` (default action) |
+| `list` | Paginated list; filters: `status`, `priority`, `assign`, `contacts`, `due`, `completed`, `title` + `title_match` |
 | `task_detail` | One task by integer `id` + subtasks, attachments, tags |
 | `boards` | Integer `task_boards.id` for filter dropdowns |
 | `tags` | Autocomplete via `search_tags()` |
@@ -150,7 +149,7 @@ On Edge Functions:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_DB_URL` (required for **tasks** / **kanban**)
+- `SUPABASE_DB_URL` (required for **tasks**)
 
 RPCs: `get_token_health`, `get_vault_secrets`.
 

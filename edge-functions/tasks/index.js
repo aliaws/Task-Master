@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
         ...(isSqlSyntax && action === "list"
           ? {
               hint:
-                "List filter SQL: query.js buildListWhere + list.js. filters.status = integer task_boards.id; filters.contacts = UUID contacts.id only.",
+                "List filters: status = integer task_boards.id; contacts = UUID; priority = exact string; title + title_match for search.",
             }
           : {}),
       },
