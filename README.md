@@ -65,6 +65,7 @@ edge-functions/tasks/
 ├── contacts-action.js    # action: contacts — lookup / autocomplete
 ├── users-action.js       # action: users — assignee lookup
 ├── lookup-utils.js
+├── search-utils.js       # shared ILIKE / search operators
 ├── query.js              # list filters + SQL
 ├── utils.js
 └── db.js
@@ -80,9 +81,9 @@ Requires **`SUPABASE_DB_URL`** on the function.
 
 | Action | Purpose |
 |--------|---------|
-| `kanban` | Tasks grouped by `task_boards.name` (default action) |
-| `list` | Paginated list; filters: `status`, `priority`, `assign`, `contacts`, `due`, `completed`, `title` + `title_match` |
-| `task_detail` | One task by integer `id` + subtasks, attachments, tags |
+| `kanban` | Tasks grouped by `task_boards.name` (default); includes `time_spent` per task |
+| `list` | Paginated list; filters: `status`, `priority`, `assign`, `contacts`, `due`, `completed`, `title` + `title_match`; includes `time_spent` |
+| `task_detail` | One task by integer `id`; subtasks, attachments, tags, `time_spent` (same as kanban) |
 | `boards` | Integer `task_boards.id` for filter dropdowns |
 | `tags` | Autocomplete via `search_tags()` |
 | `contacts` | Contact lookup: autocomplete or `search_column` + `search_operator` |
