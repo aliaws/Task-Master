@@ -1,10 +1,25 @@
-export const JSON_HEADERS = { "Content-Type": "application/json" };
+export const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-api-key",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+export const JSON_HEADERS = {
+  ...CORS_HEADERS,
+  "Content-Type": "application/json",
+};
 
 export function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: JSON_HEADERS,
   });
+}
+
+/** Preflight for browser clients (same as password-validate-send-otp). */
+export function corsPreflightResponse() {
+  return new Response("ok", { headers: CORS_HEADERS });
 }
 
 export function formatHMS(totalSeconds) {

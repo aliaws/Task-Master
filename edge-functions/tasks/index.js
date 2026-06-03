@@ -5,7 +5,7 @@ import { handleTaskDetail } from "./task-detail.js";
 import { handleTagsSearch } from "./tags-action.js";
 import { handleContactsLookup } from "./contacts-action.js";
 import { handleUsersLookup } from "./users-action.js";
-import { jsonResponse } from "./utils.js";
+import { corsPreflightResponse, jsonResponse } from "./utils.js";
 
 const ACTIONS = [
   "kanban",
@@ -26,6 +26,10 @@ function parseAction(req, body) {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return corsPreflightResponse();
+  }
+
   let action;
 
   try {

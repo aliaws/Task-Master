@@ -77,6 +77,8 @@ supabase functions deploy tasks
 
 Requires **`SUPABASE_DB_URL`** on the function.
 
+**CORS:** Responses include `Access-Control-Allow-Origin: *` and allowed headers (`authorization`, `x-client-info`, `apikey`, `content-type`, `x-api-key`). Send **`OPTIONS`** for preflight; **`POST`** for all actions (same pattern as `password-validate-send-otp`).
+
 **API reference:** [docs/TASKS_API.md](docs/TASKS_API.md)
 
 | Action | Purpose |
@@ -165,4 +167,8 @@ RPCs: `get_token_health`, `get_vault_secrets`.
 
 ## Other edge functions
 
-`refresh-token.js`, `task-timer.js`, local `sync-task-ghl-localy.js` (not deployed as unified entrypoints).
+| File | Notes |
+|------|--------|
+| `password-validate-send-otp.ts` | Hono; password check + OTP send/verify; CORS + `x-api-key` |
+| `refresh-token.js`, `task-timer.js` | Deploy separately if used |
+| `sync-task-ghl-localy.js` | Local only, not deployed |
