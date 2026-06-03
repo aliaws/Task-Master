@@ -154,7 +154,8 @@ Flat paginated task list for tables / mobile list views.
       "title": "Call Dana",
       "priority": "Medium",
       "status": { "id": 2, "name": "In Progress" },
-      "description": "…",
+      "description": "They just need help with \"Portfolio\" page, uploading images…",
+      "description_truncated": "They just need help with \"Portfolio\" page..",
       "contact": { "id": "550e8400-...", "name": "Jane Doe", "email": "j@example.com" },
       "assigned_to": {
         "id": "auth-user-uuid",
@@ -183,6 +184,8 @@ Flat paginated task list for tables / mobile list views.
 ```
 
 **Initials rule:** two-word display name → both initials (`John Doe` → `JS`); one word → first letter (`Madonna` → `M`).
+
+**`description_truncated`:** Short preview on `list` and `kanban` only. Uses the first clause before a comma when present, otherwise ~80 characters at a word boundary, with `..` when shortened. Full text remains in `description`.
 
 ---
 

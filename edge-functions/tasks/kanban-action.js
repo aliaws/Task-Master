@@ -1,5 +1,5 @@
 import { sql } from "./db.js";
-import { buildAssignee, formatHMS } from "./utils.js";
+import { buildAssignee, formatHMS, truncateDescription } from "./utils.js";
 
 /**
  * Original kanban board API — unchanged behaviour.
@@ -142,6 +142,7 @@ export async function handleKanban(body) {
       const { assigned_id, assignee_display_name, ...rest } = t;
       return {
         ...rest,
+        description_truncated: truncateDescription(t.description),
         assigned_to: buildAssignee({ assigned_id, assignee_display_name }),
         time_spent: Number(t.time_spent),
         time_spent_in_words: formatHMS(Number(t.time_spent)),

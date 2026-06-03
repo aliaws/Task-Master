@@ -74,6 +74,31 @@ export function buildStatus(row) {
   };
 }
 
+/**
+ * Short preview for cards/lists. Prefers first clause (before comma);
+ * otherwise trims at word boundary (~80 chars) and adds "..".
+ */
+export function truncateDescription(text, maxLen = 80) {
+  if (text == null || text === "") return null;
+
+  const trimmed = String(text).trim();
+  if (!trimmed) return null;
+
+  const commaAt = trimmed.indexOf(",");
+  if (commaAt > 20 && commaAt <= 200) {
+    return `${trimmed.slice(0, commaAt).trim()}..`;
+  }
+
+  if (trimmed.length <= maxLen) return trimmed;
+
+  let cut = trimmed.slice(0, maxLen);
+  const lastSpace = cut.lastIndexOf(" ");
+  if (lastSpace > maxLen * 0.5) {
+    cut = cut.slice(0, lastSpace);
+  }
+  return `${cut.trim()}..`;
+}
+
 /** Same shape as kanban: seconds + human-readable string. */
 export function buildTimeSpent(row) {
   const time_spent = Number(row?.time_spent ?? 0);
