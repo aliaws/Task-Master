@@ -101,6 +101,18 @@ POST https://{{Supabase_ID}}.supabase.co/functions/v1/tasks
 
 **Sample data** (tags, assignees, optional contacts): [sample-data/](sample-data/)
 
+### task-timer
+
+Source: `edge-functions/task-timer/index.ts` — record session time and return total `time_spent` for a task.
+
+```bash
+supabase functions deploy task-timer
+```
+
+Requires **`SUPABASE_DB_URL`**. **CORS:** same as **tasks** (`OPTIONS` preflight, `POST` only).
+
+**Body:** `{ "task_id": 42, "duration_seconds": 120 }` — `duration_seconds` is optional; if omitted, only returns current total.
+
 ---
 
 ## Recommended sync order (fresh project)
@@ -160,7 +172,7 @@ On Edge Functions:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_DB_URL` (required for **tasks**)
+- `SUPABASE_DB_URL` (required for **tasks**, **task-timer**)
 
 RPCs: `get_token_health`, `get_vault_secrets`.
 
@@ -171,5 +183,6 @@ RPCs: `get_token_health`, `get_vault_secrets`.
 | File | Notes |
 |------|--------|
 | `password-validate-send-otp.ts` | Hono; password check + OTP send/verify; CORS + `x-api-key` |
-| `refresh-token.js`, `task-timer.js` | Deploy separately if used |
+| `task-timer/index.ts` | POST/OPTIONS; append `task_sessions`, return total time (see Deploy § task-timer) |
+| `refresh-token.js` | Deploy separately if used |
 | `sync-task-ghl-localy.js` | Local only, not deployed |

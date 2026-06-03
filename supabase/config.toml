@@ -8,3 +8,7 @@ verify_jwt = false
 [functions.tasks]
 entrypoint = "../edge-functions/tasks/index.js"
 verify_jwt = false
+
+[functions.task-timer]
+entrypoint = "../edge-functions/task-timer/index.ts"
+verify_jwt = false
