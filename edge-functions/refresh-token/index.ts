@@ -7,6 +7,20 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_ANON_KEY")!
 );
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-api-key",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
+
+function json(res: unknown, status = 200) {
+  return new Response(JSON.stringify(res), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 const REFRESH_BUFFER_HOURS = 2;
 
 async function vault(names: string[] = []) {
@@ -33,25 +47,24 @@ function shouldRefresh(accessToken: string) {
   }
 }
 
-serve(async () => {
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     const v = await vault();
 
-    // 1. Get latest token from DB
-    const { data: token, error } =
-      await supabase.rpc("get_token_health");
+    const { data: token, error } = await supabase.rpc("get_token_health");
 
     if (error) throw new Error(error.message);
 
     if (!token) {
-      return Response.json(
-        { error: "No token found" },
-        { status: 404 }
-      );
+      return json({ error: "No token found" }, 404);
     }
 
     if (!shouldRefresh(token.access_token)) {
-      return Response.json({
+      return json({
         status: "active",
         message: "Token is still valid",
         access_token: token.access_token,
@@ -78,10 +91,9 @@ serve(async () => {
     const t = await res.json();
 
     if (!res.ok) {
-      return Response.json(t, { status: res.status });
+      return json(t, res.status);
     }
 
-    // 4. Insert NEW token
     await supabase.from("engage_tokens").insert({
       auth_code: t.auth_code ?? null,
       access_token: t.access_token,
@@ -90,15 +102,12 @@ serve(async () => {
       scope: t.scope ?? null,
     });
 
-    // 5. Return refreshed token
-    return Response.json({
+    return json({
       status: "refreshed",
       access_token: t.access_token,
+      refresh_token: t.refresh_token,
     });
   } catch (e) {
-    return Response.json(
-      { error: e.message },
-      { status: 500 }
-    );
+    return json({ error: (e as Error).message }, 500);
   }
 });

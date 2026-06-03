@@ -113,6 +113,16 @@ Requires **`SUPABASE_DB_URL`**. **CORS:** same as **tasks** (`OPTIONS` preflight
 
 **Body:** `{ "task_id": 42, "duration_seconds": 120 }` — `duration_seconds` is optional; if omitted, only returns current total.
 
+### refresh-token
+
+Source: `edge-functions/refresh-token/index.ts` — refresh GHL OAuth token when near expiry (`get_token_health` + vault secrets).
+
+```bash
+supabase functions deploy refresh-token
+```
+
+Requires **`SUPABASE_URL`**, **`SUPABASE_ANON_KEY`**, and RPCs `get_token_health`, `get_vault_secrets`. **CORS:** `OPTIONS` preflight; **`GET`** or **`POST`** (no body required). Often invoked on a schedule.
+
 ---
 
 ## Recommended sync order (fresh project)
@@ -184,5 +194,5 @@ RPCs: `get_token_health`, `get_vault_secrets`.
 |------|--------|
 | `password-validate-send-otp.ts` | Hono; password check + OTP send/verify; CORS + `x-api-key` |
 | `task-timer/index.ts` | POST/OPTIONS; append `task_sessions`, return total time (see Deploy § task-timer) |
-| `refresh-token.js` | Deploy separately if used |
+| `refresh-token/index.ts` | GHL OAuth refresh; CORS + GET/POST/OPTIONS (see Deploy § refresh-token) |
 | `sync-task-ghl-localy.js` | Local only, not deployed |

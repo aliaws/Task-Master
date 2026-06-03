@@ -12,3 +12,7 @@ verify_jwt = false
 [functions.task-timer]
 entrypoint = "../edge-functions/task-timer/index.ts"
 verify_jwt = false
+
+[functions.refresh-token]
+entrypoint = "../edge-functions/refresh-token/index.ts"
+verify_jwt = false
