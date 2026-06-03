@@ -12,6 +12,7 @@ Supabase Edge Functions for GoHighLevel sync and task board APIs. Sync checkpoin
 | `tags.id` / `task_tags.tag_id` | integer |
 | `task_tags.task_id` | integer → `tasks.id` |
 | `tasks.assigned_to` | UUID (Supabase Auth user, from sync) |
+| `tasks.data_source` | string (origin of the task row; returned on `list` and `kanban`) |
 
 Apply tags schema once:
 
@@ -83,8 +84,8 @@ Requires **`SUPABASE_DB_URL`** on the function.
 
 | Action | Purpose |
 |--------|---------|
-| `kanban` | Tasks grouped by `task_boards.name` (default); includes `time_spent` per task |
-| `list` | Paginated list; filters: `status`, `priority`, `assign`, `contacts`, `due`, `completed`, `title` + `title_match`; includes `time_spent` |
+| `kanban` | Tasks grouped by `task_boards.name` (default); `assigned_to`, `time_spent`, `data_source` per task |
+| `list` | Paginated list; filters: `status`, `priority`, `assign`, `contacts`, `due`, `completed`, `title` + `title_match`; `assigned_to`, `time_spent`, `data_source` |
 | `task_detail` | One task by integer `id`; subtasks, attachments, tags, `time_spent` (same as kanban) |
 | `boards` | Integer `task_boards.id` for filter dropdowns |
 | `tags` | Autocomplete via `search_tags()` |

@@ -29,6 +29,7 @@ function mapListRow(row) {
     assigned_to: buildAssignee(row),
     due_date: row.due_date,
     ghl_id: row.ghl_id,
+    data_source: row.data_source ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ...buildTimeSpent(row),

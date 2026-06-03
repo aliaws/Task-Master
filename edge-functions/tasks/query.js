@@ -234,6 +234,7 @@ export const TASK_SELECT_CORE = sql`
   tb.description,
   tb.due_date,
   tb.ghl_id,
+  tb.data_source,
   tb.created_at,
   tb.updated_at,
   tb.status_id,

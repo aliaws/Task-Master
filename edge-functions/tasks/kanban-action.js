@@ -1,5 +1,5 @@
 import { sql } from "./db.js";
-import { formatHMS } from "./utils.js";
+import { buildAssignee, formatHMS } from "./utils.js";
 
 /**
  * Original kanban board API — unchanged behaviour.
@@ -51,6 +51,7 @@ const getTasks = async (
       tb.subtasks,
       tb.attachments,
       tb.due_date,
+      tb.data_source,
       tb.created_at,
       tb.status_id,
 
@@ -61,16 +62,32 @@ const getTasks = async (
         'email', c.email
       ) AS contact,
 
-      COALESCE(SUM(ts.duration_seconds), 0)::double precision AS time_spent
+      COALESCE(SUM(ts.duration_seconds), 0)::double precision AS time_spent,
+
+      u.id AS assigned_id,
+      COALESCE(
+        NULLIF(
+          TRIM(
+            CONCAT_WS(
+              ' ',
+              u.raw_user_meta_data->>'first_name',
+              u.raw_user_meta_data->>'last_name'
+            )
+          ),
+          ''
+        ),
+        split_part(u.email, '@', 1)
+      ) AS assignee_display_name
 
     FROM public.tasks tb
     LEFT JOIN public.contacts c ON tb.contact_id = c.id
+    LEFT JOIN auth.users u ON u.id = tb.assigned_to
     LEFT JOIN public.task_sessions ts ON ts.task_id = tb.id
 
     WHERE tb.status_id = ${statusId}
     ${buildFilters(filters)}
 
-    GROUP BY tb.id, c.id
+    GROUP BY tb.id, c.id, u.id
 
     ORDER BY ${orderBy}, tb.priority DESC
     LIMIT ${limit}
@@ -121,11 +138,15 @@ export async function handleKanban(body) {
       getCount(status.id, filters),
     ]);
 
-    const enrichedTasks = tasks.map((t) => ({
-      ...t,
-      time_spent: Number(t.time_spent),
-      time_spent_in_words: formatHMS(Number(t.time_spent)),
-    }));
+    const enrichedTasks = tasks.map((t) => {
+      const { assigned_id, assignee_display_name, ...rest } = t;
+      return {
+        ...rest,
+        assigned_to: buildAssignee({ assigned_id, assignee_display_name }),
+        time_spent: Number(t.time_spent),
+        time_spent_in_words: formatHMS(Number(t.time_spent)),
+      };
+    });
 
     boards[status.name] = {
       id: status.id,

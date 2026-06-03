@@ -163,6 +163,7 @@ Flat paginated task list for tables / mobile list views.
       },
       "due_date": "2026-05-19T17:00:00.000Z",
       "ghl_id": "EXWCtKrL6mvWOue5Uesc",
+      "data_source": "ghl",
       "time_spent": 3600,
       "time_spent_in_words": "1 hour, 0 minutes, 0 seconds",
       "created_at": "2026-05-01T12:00:00.000Z",
