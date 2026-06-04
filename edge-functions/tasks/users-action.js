@@ -1,51 +1,99 @@
-import { sql } from "./db.js";
-import { buildIlikePattern } from "./search-utils.js";
 import {
   lookupPaginationMeta,
   parseLookupFilters,
   parseLookupPage,
 } from "./lookup-utils.js";
+import { initialsFromDisplayName } from "./utils.js";
 
 const USER_COLUMNS = new Set(["name", "email"]);
 
-const USER_DISPLAY_NAME = `COALESCE(
-  NULLIF(
-    TRIM(
-      CONCAT_WS(
-        ' ',
-        u.raw_user_meta_data->>'first_name',
-        u.raw_user_meta_data->>'last_name'
-      )
-    ),
-    ''
-  ),
-  split_part(u.email, '@', 1)
-)`;
+function authUserDisplayName(user) {
+  const meta = user.user_metadata ?? {};
+  const full = [meta.first_name, meta.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (full) return full;
+  const email = user.email ?? "";
+  return email.includes("@") ? email.split("@")[0] : email;
+}
 
-const USER_COLUMN_EXPR = {
-  name: USER_DISPLAY_NAME,
-  email: "u.email",
-};
+function authUserMatchesFilter(user, parsed) {
+  const name = authUserDisplayName(user).toLowerCase();
+  const email = (user.email ?? "").toLowerCase();
 
-function mapUserRow(row) {
+  if (parsed.mode === "autocomplete") {
+    if (!parsed.q) return true;
+    const q = parsed.q.toLowerCase();
+    return name.startsWith(q) || email.startsWith(q);
+  }
+
+  if (!parsed.q) return true;
+
+  const haystack = parsed.search_column === "email" ? email : name;
+  const q = parsed.q.toLowerCase();
+
+  if (parsed.search_operator === "starts_with") return haystack.startsWith(q);
+  if (parsed.search_operator === "ends_with") return haystack.endsWith(q);
+  return haystack.includes(q);
+}
+
+function mapAuthUser(user) {
+  const meta = user.user_metadata ?? {};
+  const display_name = authUserDisplayName(user);
+  const first_name = meta.first_name ?? null;
+  const last_name = meta.last_name ?? null;
+
   return {
-    id: row.id,
-    display_name: row.display_name,
-    email: row.email,
+    id: user.id,
+    display_name,
+    email: user.email ?? null,
+    initials: initialsFromDisplayName(display_name),
+    user_metadata: {
+      ghl_id: meta.ghl_id ?? null,
+      first_name,
+      last_name,
+    },
   };
 }
 
-function userWhereClause(parsed) {
-  if (parsed.mode === "autocomplete") {
-    if (!parsed.q) return sql``;
-    return sql`WHERE ${sql.unsafe(USER_DISPLAY_NAME)} ILIKE ${`${parsed.q}%`}`;
+async function listAuthUsers() {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  if (!url || !key) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
   }
 
-  if (!parsed.q) return sql``;
+  const all = [];
+  let page = 1;
+  const perPage = 1000;
 
-  const columnExpr = USER_COLUMN_EXPR[parsed.search_column];
-  const pattern = buildIlikePattern(parsed.q, parsed.search_operator);
-  return sql`WHERE ${sql.unsafe(columnExpr)} ILIKE ${pattern}`;
+  while (true) {
+    const res = await fetch(
+      `${url}/auth/v1/admin/users?page=${page}&per_page=${perPage}`,
+      {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          apikey: key,
+        },
+      }
+    );
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Auth admin listUsers failed: ${err}`);
+    }
+
+    const json = await res.json();
+    const batch = json?.users ?? [];
+    all.push(...batch);
+
+    if (batch.length < perPage) break;
+    page++;
+  }
+
+  return all;
 }
 
 function userMetaExtras(parsed) {
@@ -66,37 +114,29 @@ export async function handleUsersLookup(body) {
     defaultColumn: "name",
   });
   const page = parseLookupPage(body);
+
+  const filtered = (await listAuthUsers())
+    .filter((u) => authUserMatchesFilter(u, parsed))
+    .sort((a, b) =>
+      authUserDisplayName(a).localeCompare(authUserDisplayName(b), undefined, {
+        sensitivity: "base",
+      })
+    );
+
+  const count = filtered.length;
   const offset = (page - 1) * parsed.limit;
-  const where = userWhereClause(parsed);
-
-  const [countRows, rows] = await Promise.all([
-    sql`
-      SELECT COUNT(*)::int AS count
-      FROM auth.users u
-      ${where}
-    `,
-    sql`
-      SELECT
-        u.id,
-        ${sql.unsafe(USER_DISPLAY_NAME)} AS display_name,
-        u.email
-      FROM auth.users u
-      ${where}
-      ORDER BY display_name
-      LIMIT ${parsed.limit}
-      OFFSET ${offset}
-    `,
-  ]);
-
-  const count = countRows[0]?.count ?? 0;
+  const pageRows = filtered.slice(offset, offset + parsed.limit);
 
   return {
-    data: rows.map(mapUserRow),
+    data: pageRows.map(mapAuthUser),
     meta: lookupPaginationMeta({
       count,
       page,
       limit: parsed.limit,
-      extra: userMetaExtras(parsed),
+      extra: {
+        ...userMetaExtras(parsed),
+        returned: pageRows.length,
+      },
     }),
   };
 }

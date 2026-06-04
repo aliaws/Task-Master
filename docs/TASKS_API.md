@@ -428,7 +428,13 @@ Search **`auth.users`** (assignees synced from GHL). Same filter pattern as `con
     {
       "id": "auth-user-uuid",
       "display_name": "Robert McCarthy",
-      "email": "robert@example.com"
+      "email": "robert@example.com",
+      "initials": "RM",
+      "user_metadata": {
+        "ghl_id": "GHL_USER_ID",
+        "first_name": "Robert",
+        "last_name": "McCarthy"
+      }
     }
   ],
   "meta": {
@@ -446,6 +452,8 @@ Search **`auth.users`** (assignees synced from GHL). Same filter pattern as `con
 ```
 
 Same pagination fields as `contacts`: `count` = total matches, `total_pages` = `ceil(count / limit)`.
+
+Uses **Auth Admin API** (not SQL on `auth.users`) so `user_metadata` from GHL sync (`ghl_id`, `first_name`, `last_name`) is always present. Empty `q` with search filters returns all users (paginated).
 
 Use returned `id` values in `list` filters: `filters.assign` (UUID array).
 
