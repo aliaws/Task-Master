@@ -216,7 +216,7 @@ export async function syncContacts(
       email: c.email || null,
       phone: c.phone || null,
       ghl_date_updated: c.dateUpdated ? toGhlDate(c.dateUpdated) : null,
-      data_source: "ghl",
+      data_source: "engage",
     }));
 
     const { error } = await supabase

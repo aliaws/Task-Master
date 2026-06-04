@@ -19,12 +19,12 @@ The function **loads the row from the database** and builds a **GHL-only** paylo
 {
   "type": "INSERT",
   "table": "tasks",
-  "record": { "id": 42, "data_source": "app" },
+  "record": { "id": 42, "data_source": "task_master" },
   "old_record": null
 }
 ```
 
-Set `data_source: "app"` on the row (or in `record` for loop guard). Do **not** send full DB columns to GHL.
+Set `data_source: "task_master"` on the row (or in `record` for loop guard). Use `"engage"` for inbound GHL rows (skipped). Do **not** send full DB columns to GHL.
 
 ## What GHL receives (edit in `ghl-payloads.ts`)
 

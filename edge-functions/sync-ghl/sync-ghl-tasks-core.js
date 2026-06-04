@@ -125,7 +125,7 @@ export function transformTask(task, contactRow, userMap, statusMap) {
     ghl_id: task.id,
     status_id: statusMap[String(task.completed)],
     assigned_to: assignedUUID,
-    data_source: "ghl",
+    data_source: "engage",
     updated_at: new Date().toISOString(),
   };
 }

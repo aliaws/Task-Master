@@ -1,3 +1,5 @@
+import { isEngageSource } from "./data-source.ts";
+
 const GHL_ONLY_FIELDS = new Set([
   "ghl_id",
   "data_source",
@@ -6,13 +8,16 @@ const GHL_ONLY_FIELDS = new Set([
   "total_tasks",
 ]);
 
-/** Skip outbound push when row came from GHL or we only wrote sync metadata. */
+/** Skip outbound push when row came from GHL/Engage or we only wrote sync metadata. */
 export function shouldSkipOutbound(
   record: Record<string, unknown>,
   oldRecord: Record<string, unknown> | null
 ): { skip: boolean; reason?: string } {
-  if (record.data_source === "ghl") {
-    return { skip: true, reason: "data_source is ghl (inbound sync)" };
+  if (isEngageSource(record.data_source)) {
+    return {
+      skip: true,
+      reason: "data_source is engage (inbound GHL sync)",
+    };
   }
 
   if (!oldRecord) {

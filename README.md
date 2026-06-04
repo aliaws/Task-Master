@@ -12,7 +12,7 @@ Supabase Edge Functions for GoHighLevel sync and task board APIs. Sync checkpoin
 | `tags.id` / `task_tags.tag_id` | integer |
 | `task_tags.task_id` | integer → `tasks.id` |
 | `tasks.assigned_to` | UUID (Supabase Auth user, from sync) |
-| `tasks.data_source` | string (origin of the task row; returned on `list` and `kanban`) |
+| `tasks.data_source` | `engage` (GHL) or `task_master` (app); returned on `list` and `kanban` |
 
 Apply tags schema once:
 
@@ -136,10 +136,10 @@ supabase functions deploy webhook
 
 | `data_source` | Meaning |
 |---------------|---------|
-| `app` | Created/edited in your UI → webhook **pushes** to GHL |
-| `ghl` | Row from `sync-ghl` or after webhook wrote `ghl_id` → webhook **skips** |
+| `task_master` | Created/edited in Task Master → webhook **pushes** to GHL |
+| `engage` | Row from GHL / `sync-ghl` or after webhook wrote `ghl_id` → webhook **skips** |
 
-After a successful push, the function sets `ghl_id` and `data_source = 'ghl'`. That UPDATE fires the DB webhook again, but the second run is **skipped**.
+After a successful push, the function sets `ghl_id` and `data_source = 'engage'`. That UPDATE fires the DB webhook again, but the second run is **skipped**.
 
 **Audit:** each run inserts two rows in `public.webhooks` (same `request_id`): `started`, then `completed` / `failed` / `skipped`.
 
@@ -156,7 +156,7 @@ Payload (Supabase default): `{ "type": "INSERT", "table": "tasks", "record": { .
 
 **Users:** inbound only via `sync-ghl?sync=users`; outbound user push is logged as skipped (GHL users are not updated from Auth in v1).
 
-When your app creates/edits tasks or contacts, set `data_source: 'app'` on the row.
+When your app creates/edits tasks or contacts, set `data_source: 'task_master'` on the row.
 
 **GHL payloads** are built in `edge-functions/webhook/ghl-payloads.ts` (not full DB rows). Webhook body only needs `record.id`; the function loads the row and sends GHL fields only. See [docs/WEBHOOK_API.md](docs/WEBHOOK_API.md).
 

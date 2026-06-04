@@ -5,6 +5,7 @@ import {
   type DbContactRow,
   serializeGhlPayload,
 } from "./ghl-payloads.ts";
+import { DATA_SOURCE_ENGAGE, isEngageSource } from "./data-source.ts";
 import {
   extractGhlContactId,
   ghlFetch,
@@ -36,7 +37,7 @@ async function markContactSynced(contactId: string, ghlId: string) {
     .from("contacts")
     .update({
       ghl_id: ghlId,
-      data_source: "ghl",
+      data_source: DATA_SOURCE_ENGAGE,
       updated_at: new Date().toISOString(),
     })
     .eq("id", contactId);
@@ -48,10 +49,10 @@ export async function pushContactToGhl(webhookRecord: { id: unknown }) {
   const contactId = String(webhookRecord.id);
   const row = await fetchContactForPush(contactId);
 
-  if (row.data_source === "ghl") {
+  if (isEngageSource(row.data_source)) {
     return {
       skipped: true,
-      reason: "data_source is ghl (inbound sync)",
+      reason: "data_source is engage (inbound GHL sync)",
     };
   }
 

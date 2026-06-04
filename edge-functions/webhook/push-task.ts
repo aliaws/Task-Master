@@ -10,6 +10,7 @@ import {
   type DbTaskRow,
   serializeGhlPayload,
 } from "./ghl-payloads.ts";
+import { DATA_SOURCE_ENGAGE, isEngageSource } from "./data-source.ts";
 import {
   extractGhlTaskId,
   ghlFetch,
@@ -70,7 +71,7 @@ async function markTaskSynced(taskId: number, ghlId: string) {
     .from("tasks")
     .update({
       ghl_id: ghlId,
-      data_source: "ghl",
+      data_source: DATA_SOURCE_ENGAGE,
       updated_at: new Date().toISOString(),
     })
     .eq("id", taskId);
@@ -84,10 +85,10 @@ export async function pushTaskToGhl(webhookRecord: { id: unknown }) {
 
   const row = await fetchTaskForPush(taskId);
 
-  if (row.data_source === "ghl") {
+  if (isEngageSource(row.data_source)) {
     return {
       skipped: true,
-      reason: "data_source is ghl (inbound sync)",
+      reason: "data_source is engage (inbound GHL sync)",
     };
   }
 

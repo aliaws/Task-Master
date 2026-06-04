@@ -17,7 +17,7 @@ CREATE INDEX IF NOT EXISTS webhooks_request_id_idx ON public.webhooks (request_i
 CREATE INDEX IF NOT EXISTS webhooks_entity_idx
   ON public.webhooks (entity_type, entity_id, created_at DESC);
 
--- Loop guard: inbound sync sets data_source = 'ghl'; app edits use 'app'.
+-- Loop guard: inbound sync sets data_source = 'engage'; Task Master edits use 'task_master'.
 ALTER TABLE public.contacts
   ADD COLUMN IF NOT EXISTS data_source text;
 
@@ -27,6 +27,6 @@ ALTER TABLE public.tasks
 COMMENT ON TABLE public.webhooks IS
   'Audit trail for outbound GHL pushes. Each run inserts started then completed/failed/skipped.';
 COMMENT ON COLUMN public.contacts.data_source IS
-  'ghl = from sync-ghl (skip outbound webhook); app = push to GHL on change.';
+  'engage = from GHL/sync (skip outbound webhook); task_master = push to GHL on change.';
 COMMENT ON COLUMN public.tasks.data_source IS
-  'ghl = from sync-ghl (skip outbound webhook); app = push to GHL on change.';
+  'engage = from GHL/sync (skip outbound webhook); task_master = push to GHL on change.';
