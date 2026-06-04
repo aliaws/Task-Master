@@ -13,7 +13,10 @@ import {
   type DbTaskRow,
   serializeGhlPayload,
 } from "./ghl-payloads.ts";
-import { DATA_SOURCE_ENGAGE, isEngageSource } from "./data-source.ts";
+import {
+  DATA_SOURCE_ENGAGE,
+  DATA_SOURCE_TASK_MASTER,
+} from "./data-source.ts";
 
 async function resolveAssignedToGhlId(
   assignedTo: unknown,
@@ -83,10 +86,10 @@ export async function pushTaskToGhl(webhookRecord: { id: unknown }) {
 
   const row = await fetchTaskForPush(taskId);
 
-  if (isEngageSource(row.data_source)) {
+  if (row.data_source !== DATA_SOURCE_TASK_MASTER) {
     return {
       skipped: true,
-      reason: "data_source is engage (inbound GHL sync)",
+      reason: `only task_master rows push to Engage (got ${row.data_source ?? "null"})`,
     };
   }
 
