@@ -58,16 +58,27 @@ export async function loadSupabaseToGhlUserMap(): Promise<Record<string, string>
   const url = Deno.env.get("SUPABASE_URL")!;
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  const res = await fetch(`${url}/auth/v1/admin/users?per_page=1000`, {
-    headers: { Authorization: `Bearer ${key}`, apikey: key },
-  });
-
-  const json = await res.json();
   const map: Record<string, string> = {};
+  let page = 1;
 
-  for (const u of json?.users ?? []) {
-    const ghlId = u?.user_metadata?.ghl_id;
-    if (ghlId && u.id) map[u.id] = String(ghlId);
+  while (true) {
+    const res = await fetch(
+      `${url}/auth/v1/admin/users?page=${page}&per_page=1000`,
+      { headers: { Authorization: `Bearer ${key}`, apikey: key } }
+    );
+
+    if (!res.ok) break;
+
+    const json = await res.json();
+    const batch = json?.users ?? [];
+
+    for (const u of batch) {
+      const ghlId = u?.user_metadata?.ghl_id;
+      if (ghlId && u.id) map[u.id] = String(ghlId);
+    }
+
+    if (batch.length < 1000) break;
+    page++;
   }
 
   return map;

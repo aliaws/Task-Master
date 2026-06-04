@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { logWebhookEvent, newRequestId } from "./audit.ts";
-import { pushContactToGhl, pushTaskToGhl, pushUserToGhl } from "./handlers.ts";
+import { pushContactToGhl, pushUserToGhl } from "./handlers.ts";
+import { pushTaskToGhl } from "./push-task.ts";
 import { shouldSkipOutbound } from "./loop-guard.ts";
 
 const corsHeaders = {

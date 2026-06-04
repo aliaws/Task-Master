@@ -158,6 +158,8 @@ Payload (Supabase default): `{ "type": "INSERT", "table": "tasks", "record": { .
 
 When your app creates/edits tasks or contacts, set `data_source: 'app'` on the row.
 
+**GHL task push** uses `get_token_health` (Bearer) + vault `locationId`. Maps `description` → `body`, `status_id` → `completed` (from `task_boards.is_completed`), `assigned_to` → `assignedTo` via `user_metadata.ghl_id`. Create requires `title`, `dueDate`, `completed` (default due date used if missing).
+
 ---
 
 ## Recommended sync order (fresh project)
