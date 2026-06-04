@@ -1,5 +1,10 @@
 import { sql } from "./db.js";
-import { buildAssignee, formatHMS, truncateDescription } from "./utils.js";
+import {
+  buildAssignee,
+  formatHMS,
+  parseDescriptionTruncateLength,
+  truncateDescription,
+} from "./utils.js";
 
 /**
  * Original kanban board API — unchanged behaviour.
@@ -123,6 +128,8 @@ export async function handleKanban(body) {
       ? body.filters
       : null;
 
+  const descriptionTruncateLength = parseDescriptionTruncateLength(body);
+
   const boards = {};
 
   const statuses = await sql`
@@ -142,7 +149,10 @@ export async function handleKanban(body) {
       const { assigned_id, assignee_display_name, ...rest } = t;
       return {
         ...rest,
-        description_truncated: truncateDescription(t.description),
+        description_truncated: truncateDescription(
+          t.description,
+          descriptionTruncateLength
+        ),
         assigned_to: buildAssignee({ assigned_id, assignee_display_name }),
         time_spent: Number(t.time_spent),
         time_spent_in_words: formatHMS(Number(t.time_spent)),
@@ -157,6 +167,7 @@ export async function handleKanban(body) {
         limit,
         order,
         has_more: offset + limit < count,
+        description_truncate_length: descriptionTruncateLength,
       },
       data: enrichedTasks,
     };

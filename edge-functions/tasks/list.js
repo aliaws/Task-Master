@@ -6,6 +6,7 @@ import {
   buildTimeSpent,
   truncateDescription,
   paginationMeta,
+  parseDescriptionTruncateLength,
   parsePagination,
   parseSort,
 } from "./utils.js";
@@ -19,14 +20,17 @@ import {
   TASK_SELECT_CORE,
 } from "./query.js";
 
-function mapListRow(row) {
+function mapListRow(row, descriptionTruncateLength) {
   return {
     id: row.id,
     title: row.title,
     priority: row.priority,
     status: buildStatus(row),
     description: row.description,
-    description_truncated: truncateDescription(row.description),
+    description_truncated: truncateDescription(
+      row.description,
+      descriptionTruncateLength
+    ),
     contact: buildContact(row),
     assigned_to: buildAssignee(row),
     due_date: row.due_date,
@@ -41,6 +45,7 @@ function mapListRow(row) {
 export async function handleList(body) {
   const { page, limit, offset } = parsePagination(body);
   const { sortBy, order, column } = parseSort(body);
+  const descriptionTruncateLength = parseDescriptionTruncateLength(body);
   const filters = parseListFilters(body);
   const orderClause = buildOrderClause(column, order);
 
@@ -69,7 +74,10 @@ export async function handleList(body) {
   `;
 
   return {
-    data: rows.map(mapListRow),
-    meta: paginationMeta({ count, page, limit, sortBy, order }),
+    data: rows.map((row) => mapListRow(row, descriptionTruncateLength)),
+    meta: {
+      ...paginationMeta({ count, page, limit, sortBy, order }),
+      description_truncate_length: descriptionTruncateLength,
+    },
   };
 }

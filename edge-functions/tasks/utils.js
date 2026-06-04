@@ -74,19 +74,52 @@ export function buildStatus(row) {
   };
 }
 
+export const DEFAULT_DESCRIPTION_TRUNCATE_LENGTH = 80;
+
+/** From list/kanban body; default 80, clamped 20–500. */
+export function parseDescriptionTruncateLength(body) {
+  const raw = body?.description_truncate_length ?? body?.truncated_length;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    return DEFAULT_DESCRIPTION_TRUNCATE_LENGTH;
+  }
+  return Math.min(500, Math.max(20, Math.floor(n)));
+}
+
+function stripHtmlTags(text) {
+  return String(text)
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/p>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
- * Short preview for cards/lists. Prefers first clause (before comma);
- * otherwise trims at word boundary (~80 chars) and adds "..".
+ * Short preview for cards/lists. Strips HTML, prefers first clause (before comma),
+ * otherwise trims at word boundary; adds ".." when shortened.
  */
-export function truncateDescription(text, maxLen = 80) {
+export function truncateDescription(
+  text,
+  maxLen = DEFAULT_DESCRIPTION_TRUNCATE_LENGTH
+) {
   if (text == null || text === "") return null;
 
-  const trimmed = String(text).trim();
+  const trimmed = stripHtmlTags(text);
   if (!trimmed) return null;
 
   const commaAt = trimmed.indexOf(",");
-  if (commaAt > 20 && commaAt <= 200) {
-    return `${trimmed.slice(0, commaAt).trim()}..`;
+  if (commaAt > 20 && commaAt <= Math.max(maxLen, 120)) {
+    const clause = trimmed.slice(0, commaAt).trim();
+    if (clause.length <= maxLen) return `${clause}..`;
   }
 
   if (trimmed.length <= maxLen) return trimmed;

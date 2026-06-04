@@ -101,6 +101,7 @@ Flat paginated task list for tables / mobile list views.
   "limit": 20,
   "sort_by": "created_at",
   "order": "DESC",
+  "description_truncate_length": 80,
   "filters": {
     "status": [1, 2],
     "priority": "High",
@@ -185,7 +186,9 @@ Flat paginated task list for tables / mobile list views.
 
 **Initials rule:** two-word display name → both initials (`John Doe` → `JS`); one word → first letter (`Madonna` → `M`).
 
-**`description_truncated`:** Short preview on `list` and `kanban` only. Uses the first clause before a comma when present, otherwise ~80 characters at a word boundary, with `..` when shortened. Full text remains in `description`.
+**`description_truncated`:** Short preview on `list` and `kanban` only. HTML tags are stripped first. Uses the first clause before a comma when present, otherwise trims at a word boundary, with `..` when shortened. Full text remains in `description`.
+
+**`description_truncate_length`:** Optional on `list` and `kanban` request body (alias: `truncated_length`). Default **80**, min 20, max 500. Echoed in `meta.description_truncate_length` (kanban: per-column `meta`).
 
 ---
 
