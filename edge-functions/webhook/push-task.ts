@@ -1,5 +1,8 @@
 import {
+  extractGhlTaskId,
   getAccessToken,
+  ghlFetch,
+  ghlJsonOrThrow,
   loadCompletedStatusMap,
   loadSupabaseToGhlUserMap,
   supabase,
@@ -11,11 +14,6 @@ import {
   serializeGhlPayload,
 } from "./ghl-payloads.ts";
 import { DATA_SOURCE_ENGAGE, isEngageSource } from "./data-source.ts";
-import {
-  extractGhlTaskId,
-  ghlFetch,
-  ghlJsonOrThrow,
-} from "./ghl-http.ts";
 
 async function resolveAssignedToGhlId(
   assignedTo: unknown,

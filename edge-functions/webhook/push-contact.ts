@@ -1,4 +1,11 @@
-import { getAccessToken, supabase, vault } from "./ghl-client.ts";
+import {
+  extractGhlContactId,
+  getAccessToken,
+  ghlFetch,
+  ghlJsonOrThrow,
+  supabase,
+  vault,
+} from "./ghl-client.ts";
 import {
   buildGhlContactCreatePayload,
   buildGhlContactUpdatePayload,
@@ -6,11 +13,6 @@ import {
   serializeGhlPayload,
 } from "./ghl-payloads.ts";
 import { DATA_SOURCE_ENGAGE, isEngageSource } from "./data-source.ts";
-import {
-  extractGhlContactId,
-  ghlFetch,
-  ghlJsonOrThrow,
-} from "./ghl-http.ts";
 
 function str(value: unknown): string | undefined {
   if (value == null) return undefined;
