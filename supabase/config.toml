@@ -16,3 +16,7 @@ verify_jwt = false
 [functions.refresh-token]
 entrypoint = "../edge-functions/refresh-token/index.ts"
 verify_jwt = false
+
+[functions.webhook]
+entrypoint = "../edge-functions/webhook/index.ts"
+verify_jwt = false

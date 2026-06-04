@@ -84,7 +84,17 @@ Board columns keyed by `task_boards.name`. Same POST shape as before.
 
 ### Response
 
-Object keyed by board name; each column has `id`, `meta`, `data` (full task rows with `contact`, `time_spent`, etc.).
+Object keyed by board name; each column has `id`, `is_completed`, `sort_order`, `meta`, `data` (full task rows with `contact`, `time_spent`, etc.).
+
+```json
+"To Do": {
+  "id": 1,
+  "is_completed": false,
+  "sort_order": 1,
+  "meta": { "count": 12, "page": 1, "limit": 20, "order": "DESC", "has_more": false },
+  "data": []
+}
+```
 
 ---
 

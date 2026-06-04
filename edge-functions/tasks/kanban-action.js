@@ -133,7 +133,7 @@ export async function handleKanban(body) {
   const boards = {};
 
   const statuses = await sql`
-    SELECT id, name
+    SELECT id, name, is_completed, sort_order
     FROM public.task_boards
     ${status_id ? sql`WHERE id = ${status_id}` : sql``}
     ORDER BY sort_order ASC
@@ -161,6 +161,8 @@ export async function handleKanban(body) {
 
     boards[status.name] = {
       id: status.id,
+      is_completed: Boolean(status.is_completed),
+      sort_order: Number(status.sort_order),
       meta: {
         count,
         page,

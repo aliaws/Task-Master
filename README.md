@@ -123,6 +123,41 @@ supabase functions deploy refresh-token
 
 Requires **`SUPABASE_URL`**, **`SUPABASE_ANON_KEY`**, and RPCs `get_token_health`, `get_vault_secrets`. **CORS:** `OPTIONS` preflight; **`GET`** or **`POST`** (no body required). Often invoked on a schedule.
 
+### webhook (outbound GHL)
+
+Pushes **contacts** and **tasks** to GoHighLevel when rows change in Supabase. Uses the same token/vault as `sync-ghl` (`get_token_health`, `get_vault_secrets`).
+
+```bash
+supabase db push   # creates public.webhooks + data_source on contacts/tasks
+supabase functions deploy webhook
+```
+
+**Loop prevention (no infinite sync):**
+
+| `data_source` | Meaning |
+|---------------|---------|
+| `app` | Created/edited in your UI → webhook **pushes** to GHL |
+| `ghl` | Row from `sync-ghl` or after webhook wrote `ghl_id` → webhook **skips** |
+
+After a successful push, the function sets `ghl_id` and `data_source = 'ghl'`. That UPDATE fires the DB webhook again, but the second run is **skipped**.
+
+**Audit:** each run inserts two rows in `public.webhooks` (same `request_id`): `started`, then `completed` / `failed` / `skipped`.
+
+**Supabase Database Webhook** (Dashboard → Database → Webhooks):
+
+| Table | Events | URL |
+|-------|--------|-----|
+| `contacts` | Insert, Update | `https://<project>.supabase.co/functions/v1/webhook` |
+| `tasks` | Insert, Update | same |
+
+Optional header: `x-webhook-secret: <WEBHOOK_SECRET>` (set on the function).
+
+Payload (Supabase default): `{ "type": "INSERT", "table": "tasks", "record": { ... }, "old_record": null }`.
+
+**Users:** inbound only via `sync-ghl?sync=users`; outbound user push is logged as skipped (GHL users are not updated from Auth in v1).
+
+When your app creates/edits tasks or contacts, set `data_source: 'app'` on the row.
+
 ---
 
 ## Recommended sync order (fresh project)
@@ -195,4 +230,5 @@ RPCs: `get_token_health`, `get_vault_secrets`.
 | `password-validate-send-otp.ts` | Hono; password check + OTP send/verify; CORS + `x-api-key` |
 | `task-timer/index.ts` | POST/OPTIONS; append `task_sessions`, return total time (see Deploy § task-timer) |
 | `refresh-token/index.ts` | GHL OAuth refresh; CORS + GET/POST/OPTIONS (see Deploy § refresh-token) |
+| `webhook/index.ts` | Outbound GHL push on DB changes; audit in `public.webhooks` (see Deploy § webhook) |
 | `sync-task-ghl-localy.js` | Local only, not deployed |
