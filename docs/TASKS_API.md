@@ -318,14 +318,21 @@ Search `public.contacts` for filter dropdowns and assignee pickers. Use **`filte
 ```json
 {
   "action": "contacts",
-  "q": "riverside",
+  "page": 1,
+  "q": "McCarthy",
   "limit": 20,
   "filters": {
-    "search_column": "email",
+    "search_column": "name",
     "search_operator": "contains"
   }
 }
 ```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `page` | number | `1` | Page number (1-based) |
+| `limit` | number | `20` | Page size (max 100) |
+| `q` | string | `""` | Search term |
 
 | `filters` field | Type | Description |
 |-----------------|------|-------------|
@@ -352,13 +359,20 @@ Empty `q` returns up to `limit` rows sorted by display name.
     }
   ],
   "meta": {
-    "mode": "autocomplete",
-    "q": "mar",
+    "mode": "search",
+    "q": "McCarthy",
+    "search_column": "name",
+    "search_operator": "contains",
+    "count": 47,
+    "page": 1,
     "limit": 20,
-    "count": 1
+    "total_pages": 3,
+    "has_more": true
   }
 }
 ```
+
+`meta.count` is the **total** rows matching the filter (not just this page). Use `total_pages` and `has_more` to build pagination UI.
 
 ---
 
@@ -382,7 +396,8 @@ Search **`auth.users`** (assignees synced from GHL). Same filter pattern as `con
 ```json
 {
   "action": "users",
-  "q": "mitchell",
+  "page": 1,
+  "q": "McCarthy",
   "limit": 20,
   "filters": {
     "search_column": "name",
@@ -390,6 +405,12 @@ Search **`auth.users`** (assignees synced from GHL). Same filter pattern as `con
   }
 }
 ```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `page` | number | `1` | Page number (1-based) |
+| `limit` | number | `20` | Page size (max 100) |
+| `q` | string | `""` | Search term |
 
 | `filters` field | Type | Description |
 |-----------------|------|-------------|
@@ -406,20 +427,25 @@ Search **`auth.users`** (assignees synced from GHL). Same filter pattern as `con
   "data": [
     {
       "id": "auth-user-uuid",
-      "display_name": "Sarah Mitchell",
-      "email": "sarah.mitchell@acme-hvac.local"
+      "display_name": "Robert McCarthy",
+      "email": "robert@example.com"
     }
   ],
   "meta": {
     "mode": "search",
-    "q": "mitchell",
+    "q": "McCarthy",
     "search_column": "name",
     "search_operator": "contains",
+    "count": 5,
+    "page": 1,
     "limit": 20,
-    "count": 1
+    "total_pages": 1,
+    "has_more": false
   }
 }
 ```
+
+Same pagination fields as `contacts`: `count` = total matches, `total_pages` = `ceil(count / limit)`.
 
 Use returned `id` values in `list` filters: `filters.assign` (UUID array).
 

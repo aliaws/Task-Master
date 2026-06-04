@@ -4,6 +4,28 @@ export function parseLookupLimit(body) {
   return Math.min(100, Math.max(1, Number(body.limit ?? 20) || 20));
 }
 
+export function parseLookupPage(body) {
+  return Math.max(1, Number(body.page ?? 1) || 1);
+}
+
+export function lookupPaginationMeta({
+  count,
+  page,
+  limit,
+  extra = {},
+}) {
+  const total_pages = count > 0 ? Math.ceil(count / limit) : 0;
+
+  return {
+    count,
+    page,
+    limit,
+    total_pages,
+    has_more: page < total_pages,
+    ...extra,
+  };
+}
+
 export function parseLookupQuery(body) {
   return typeof body.q === "string" ? body.q.trim() : "";
 }

@@ -1,6 +1,10 @@
 import { sql } from "./db.js";
 import { buildIlikePattern } from "./search-utils.js";
-import { parseLookupFilters } from "./lookup-utils.js";
+import {
+  lookupPaginationMeta,
+  parseLookupFilters,
+  parseLookupPage,
+} from "./lookup-utils.js";
 
 const CONTACT_COLUMNS = new Set([
   "name",
@@ -32,92 +36,71 @@ function mapContactRow(row) {
   };
 }
 
+function contactWhereClause(parsed) {
+  if (parsed.mode === "autocomplete") {
+    if (!parsed.q) return sql``;
+    return sql`WHERE ${sql.unsafe(CONTACT_DISPLAY_NAME)} ILIKE ${`${parsed.q}%`}`;
+  }
+
+  if (!parsed.q) return sql``;
+
+  const columnExpr = CONTACT_COLUMN_EXPR[parsed.search_column];
+  const pattern = buildIlikePattern(parsed.q, parsed.search_operator);
+  return sql`WHERE ${sql.unsafe(columnExpr)} ILIKE ${pattern}`;
+}
+
+function contactMetaExtras(parsed) {
+  if (parsed.mode === "autocomplete") {
+    return { mode: "autocomplete", q: parsed.q };
+  }
+  return {
+    mode: "search",
+    q: parsed.q,
+    search_column: parsed.search_column,
+    search_operator: parsed.search_operator,
+  };
+}
+
 export async function handleContactsLookup(body) {
   const parsed = parseLookupFilters(body, {
     allowedColumns: CONTACT_COLUMNS,
     defaultColumn: "name",
   });
+  const page = parseLookupPage(body);
+  const offset = (page - 1) * parsed.limit;
+  const where = contactWhereClause(parsed);
 
-  if (parsed.mode === "autocomplete") {
-    const rows = parsed.q
-      ? await sql`
-          SELECT
-            c.id,
-            ${sql.unsafe(CONTACT_DISPLAY_NAME)} AS display_name,
-            c.email,
-            c.phone,
-            c.first_name,
-            c.last_name
-          FROM public.contacts c
-          WHERE ${sql.unsafe(CONTACT_DISPLAY_NAME)} ILIKE ${`${parsed.q}%`}
-          ORDER BY display_name
-          LIMIT ${parsed.limit}
-        `
-      : await sql`
-          SELECT
-            c.id,
-            ${sql.unsafe(CONTACT_DISPLAY_NAME)} AS display_name,
-            c.email,
-            c.phone,
-            c.first_name,
-            c.last_name
-          FROM public.contacts c
-          ORDER BY display_name
-          LIMIT ${parsed.limit}
-        `;
+  const [countRows, rows] = await Promise.all([
+    sql`
+      SELECT COUNT(*)::int AS count
+      FROM public.contacts c
+      ${where}
+    `,
+    sql`
+      SELECT
+        c.id,
+        ${sql.unsafe(CONTACT_DISPLAY_NAME)} AS display_name,
+        c.email,
+        c.phone,
+        c.first_name,
+        c.last_name
+      FROM public.contacts c
+      ${where}
+      ORDER BY display_name
+      LIMIT ${parsed.limit}
+      OFFSET ${offset}
+    `,
+  ]);
 
-    return {
-      data: rows.map(mapContactRow),
-      meta: {
-        mode: "autocomplete",
-        q: parsed.q,
-        limit: parsed.limit,
-        count: rows.length,
-      },
-    };
-  }
-
-  const columnExpr = CONTACT_COLUMN_EXPR[parsed.search_column];
-  const pattern = parsed.q
-    ? buildIlikePattern(parsed.q, parsed.search_operator)
-    : null;
-
-  const rows = pattern
-    ? await sql`
-        SELECT
-          c.id,
-          ${sql.unsafe(CONTACT_DISPLAY_NAME)} AS display_name,
-          c.email,
-          c.phone,
-          c.first_name,
-          c.last_name
-        FROM public.contacts c
-        WHERE ${sql.unsafe(columnExpr)} ILIKE ${pattern}
-        ORDER BY display_name
-        LIMIT ${parsed.limit}
-      `
-    : await sql`
-        SELECT
-          c.id,
-          ${sql.unsafe(CONTACT_DISPLAY_NAME)} AS display_name,
-          c.email,
-          c.phone,
-          c.first_name,
-          c.last_name
-        FROM public.contacts c
-        ORDER BY display_name
-        LIMIT ${parsed.limit}
-      `;
+  const count = countRows[0]?.count ?? 0;
 
   return {
     data: rows.map(mapContactRow),
-    meta: {
-      mode: "search",
-      q: parsed.q,
-      search_column: parsed.search_column,
-      search_operator: parsed.search_operator,
+    meta: lookupPaginationMeta({
+      count,
+      page,
       limit: parsed.limit,
-      count: rows.length,
-    },
+      extra: contactMetaExtras(parsed),
+    }),
   };
 }
