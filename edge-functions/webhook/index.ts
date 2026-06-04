@@ -53,7 +53,7 @@ async function runPush(
     entityId,
     eventType,
     status: "started",
-    payload: { record, old_record: oldRecord },
+    payload: { entity_id: entityId, event_type: eventType },
   });
 
   const guard = shouldSkipOutbound(record, oldRecord);
@@ -74,9 +74,9 @@ async function runPush(
     let result: Record<string, unknown>;
 
     if (entityType === "contact") {
-      result = await pushContactToGhl(record);
+      result = await pushContactToGhl({ id: record.id });
     } else if (entityType === "task") {
-      result = await pushTaskToGhl(record);
+      result = await pushTaskToGhl({ id: record.id });
     } else {
       result = await pushUserToGhl(record);
     }

@@ -21,22 +21,6 @@ export async function getAccessToken(): Promise<string> {
   return data.access_token as string;
 }
 
-export async function ghlFetch(
-  path: string,
-  token: string,
-  init: RequestInit = {}
-): Promise<Response> {
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  headers.set("Version", GHL_API_VERSION);
-  headers.set("Accept", "application/json");
-  if (init.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  return fetch(`${GHL_BASE_URL}${path}`, { ...init, headers });
-}
-
 export async function loadCompletedStatusMap(): Promise<{
   statusToCompleted: Record<number, boolean>;
 }> {

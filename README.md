@@ -158,7 +158,7 @@ Payload (Supabase default): `{ "type": "INSERT", "table": "tasks", "record": { .
 
 When your app creates/edits tasks or contacts, set `data_source: 'app'` on the row.
 
-**GHL task push** uses `get_token_health` (Bearer) + vault `locationId`. Maps `description` → `body`, `status_id` → `completed` (from `task_boards.is_completed`), `assigned_to` → `assignedTo` via `user_metadata.ghl_id`. Create requires `title`, `dueDate`, `completed` (default due date used if missing).
+**GHL payloads** are built in `edge-functions/webhook/ghl-payloads.ts` (not full DB rows). Webhook body only needs `record.id`; the function loads the row and sends GHL fields only. See [docs/WEBHOOK_API.md](docs/WEBHOOK_API.md).
 
 ---
 
