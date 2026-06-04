@@ -12,10 +12,6 @@ import {
   type DbContactRow,
   serializeGhlPayload,
 } from "./ghl-payloads.ts";
-import {
-  DATA_SOURCE_ENGAGE,
-  DATA_SOURCE_TASK_MASTER,
-} from "./data-source.ts";
 
 function str(value: unknown): string | undefined {
   if (value == null) return undefined;
@@ -42,7 +38,6 @@ async function markContactSynced(contactId: string, ghlId: string) {
     .from("contacts")
     .update({
       ghl_id: ghlId,
-      data_source: DATA_SOURCE_ENGAGE,
       updated_at: new Date().toISOString(),
     })
     .eq("id", contactId);
@@ -53,13 +48,6 @@ async function markContactSynced(contactId: string, ghlId: string) {
 export async function pushContactToGhl(webhookRecord: { id: unknown }) {
   const contactId = String(webhookRecord.id);
   const row = await fetchContactForPush(contactId);
-
-  if (row.data_source !== DATA_SOURCE_TASK_MASTER) {
-    return {
-      skipped: true,
-      reason: `only task_master rows push to Engage (got ${row.data_source ?? "null"})`,
-    };
-  }
 
   const token = await getAccessToken();
   const { locationId } = await vault();

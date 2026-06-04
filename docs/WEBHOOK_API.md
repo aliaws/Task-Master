@@ -24,7 +24,7 @@ The function **loads the row from the database** and builds a **GHL-only** paylo
 }
 ```
 
-Set `data_source: "task_master"` on the row (or in `record` for loop guard). Use `"engage"` for inbound GHL rows (skipped). Do **not** send full DB columns to GHL.
+`data_source` is **label only** (`engage` = from GHL import, `task_master` = created in app). Webhook **always pushes** to GHL on real field changes. Do **not** send full DB columns to GHL — only `record.id` is required.
 
 ## What GHL receives (edit in `ghl-payloads.ts`)
 

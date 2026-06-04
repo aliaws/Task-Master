@@ -13,10 +13,6 @@ import {
   type DbTaskRow,
   serializeGhlPayload,
 } from "./ghl-payloads.ts";
-import {
-  DATA_SOURCE_ENGAGE,
-  DATA_SOURCE_TASK_MASTER,
-} from "./data-source.ts";
 
 async function resolveAssignedToGhlId(
   assignedTo: unknown,
@@ -72,7 +68,6 @@ async function markTaskSynced(taskId: number, ghlId: string) {
     .from("tasks")
     .update({
       ghl_id: ghlId,
-      data_source: DATA_SOURCE_ENGAGE,
       updated_at: new Date().toISOString(),
     })
     .eq("id", taskId);
@@ -85,13 +80,6 @@ export async function pushTaskToGhl(webhookRecord: { id: unknown }) {
   if (!Number.isInteger(taskId)) throw new Error("Invalid task id");
 
   const row = await fetchTaskForPush(taskId);
-
-  if (row.data_source !== DATA_SOURCE_TASK_MASTER) {
-    return {
-      skipped: true,
-      reason: `only task_master rows push to Engage (got ${row.data_source ?? "null"})`,
-    };
-  }
 
   const contactGhlId = row.contact_ghl_id;
   if (!contactGhlId) {

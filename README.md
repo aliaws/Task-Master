@@ -132,14 +132,16 @@ supabase db push   # creates public.webhooks + data_source on contacts/tasks
 supabase functions deploy webhook
 ```
 
-**Loop prevention (no infinite sync):**
+**`data_source` (label only):**
 
-| `data_source` | Meaning |
-|---------------|---------|
-| `task_master` | Created/edited in Task Master → webhook **pushes** to GHL |
-| `engage` | Row from GHL / `sync-ghl` or after webhook wrote `ghl_id` → webhook **skips** |
+| Value | Meaning |
+|-------|---------|
+| `engage` | Row came from Engage/GHL (`sync-ghl`) |
+| `task_master` | Row created in Task Master |
 
-After a successful push, the function sets `ghl_id` and `data_source = 'engage'`. That UPDATE fires the DB webhook again, but the second run is **skipped**.
+Webhook **always pushes** inserts/updates to GHL. `data_source` is not used to skip.
+
+**Loop prevention:** after a successful push, only `ghl_id` + `updated_at` are written back; if the webhook fires again with only those fields changed, that run is skipped.
 
 **Audit:** each run inserts two rows in `public.webhooks` (same `request_id`): `started`, then `completed` / `failed` / `skipped`.
 
@@ -152,11 +154,7 @@ After a successful push, the function sets `ghl_id` and `data_source = 'engage'`
 
 Optional header: `x-webhook-secret: <WEBHOOK_SECRET>` (set on the function).
 
-Payload (Supabase default): `{ "type": "INSERT", "table": "tasks", "record": { ... }, "old_record": null }`.
-
-**Users:** inbound only via `sync-ghl?sync=users`; outbound user push is logged as skipped (GHL users are not updated from Auth in v1).
-
-When your app creates/edits tasks or contacts, set `data_source: 'task_master'` on the row.
+Set `data_source: 'task_master'` when your app creates a row; `sync-ghl` sets `engage` on import.
 
 **GHL payloads** are built in `edge-functions/webhook/ghl-payloads.ts` (not full DB rows). Webhook body only needs `record.id`; the function loads the row and sends GHL fields only. See [docs/WEBHOOK_API.md](docs/WEBHOOK_API.md).
 
