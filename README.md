@@ -84,8 +84,8 @@ Requires **`SUPABASE_DB_URL`** on the function.
 
 | Action | Purpose |
 |--------|---------|
-| `kanban` | Tasks grouped by `task_boards.name` (default); `assigned_to`, `time_spent`, `data_source`, `description_truncated` (optional `description_truncate_length`, default **80**) |
-| `list` | Paginated list; filters: `status`, `priority`, `assign`, `contacts`, `due`, `completed`, `title` + `title_match`; `description_truncated` (HTML stripped; optional `description_truncate_length`, default **80**) |
+| `kanban` | Tasks grouped by `task_boards.name` (default); `assigned_to`, `time_spent`, `data_source`, `description_truncated` (HTML stripped; optional `description_truncate_length`, default **20**) |
+| `list` | Paginated list; filters: `status`, `priority`, `assign`, `contacts`, `due`, `completed`, `title` + `title_match`; `description_truncated` (HTML stripped; optional `description_truncate_length`, default **20**) |
 | `task_detail` | One task by integer `id`; subtasks, attachments, tags, `time_spent` (same as kanban) |
 | `boards` | Integer `task_boards.id` for filter dropdowns |
 | `tags` | Autocomplete via `search_tags()` |

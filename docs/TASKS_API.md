@@ -70,6 +70,7 @@ Board columns keyed by `task_boards.name`. Same POST shape as before.
   "page": 1,
   "limit": 20,
   "order": "DESC",
+  "description_truncate_length": 20,
   "status_id": null,
   "filters": {
     "priority": { "value": "High" }
@@ -80,6 +81,7 @@ Board columns keyed by `task_boards.name`. Same POST shape as before.
 | Field | Description |
 |-------|-------------|
 | `status_id` | Optional single board id (number, legacy) |
+| `description_truncate_length` | Optional; HTML stripped before truncate (alias: `truncated_length`). Default **20**, min 20, max 500 |
 | `filters` | Column → `{ "value": "..." }` (legacy kanban filters) |
 
 ### Response
@@ -91,8 +93,20 @@ Object keyed by board name; each column has `id`, `is_completed`, `sort_order`, 
   "id": 1,
   "is_completed": false,
   "sort_order": 1,
-  "meta": { "count": 12, "page": 1, "limit": 20, "order": "DESC", "has_more": false },
-  "data": []
+  "meta": {
+    "count": 12,
+    "page": 1,
+    "limit": 20,
+    "order": "DESC",
+    "has_more": false,
+    "description_truncate_length": 20
+  },
+  "data": [
+    {
+      "description": "<p>They just need help with \"Portfolio\" page, uploading images…</p>",
+      "description_truncated": "They just need help with \"Portfolio\" page.."
+    }
+  ]
 }
 ```
 
@@ -111,7 +125,7 @@ Flat paginated task list for tables / mobile list views.
   "limit": 20,
   "sort_by": "created_at",
   "order": "DESC",
-  "description_truncate_length": 80,
+  "description_truncate_length": 20,
   "filters": {
     "status": [1, 2],
     "priority": "High",
@@ -198,7 +212,7 @@ Flat paginated task list for tables / mobile list views.
 
 **`description_truncated`:** Short preview on `list` and `kanban` only. HTML tags are stripped first. Uses the first clause before a comma when present, otherwise trims at a word boundary, with `..` when shortened. Full text remains in `description`.
 
-**`description_truncate_length`:** Optional on `list` and `kanban` request body (alias: `truncated_length`). Default **80**, min 20, max 500. Echoed in `meta.description_truncate_length` (kanban: per-column `meta`).
+**`description_truncate_length`:** Optional on `list` and `kanban` request body (alias: `truncated_length`). Default **20**, min 20, max 500. Echoed in `meta.description_truncate_length` (kanban: per-column `meta`).
 
 ---
 

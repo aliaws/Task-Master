@@ -74,9 +74,9 @@ export function buildStatus(row) {
   };
 }
 
-export const DEFAULT_DESCRIPTION_TRUNCATE_LENGTH = 80;
+export const DEFAULT_DESCRIPTION_TRUNCATE_LENGTH = 20;
 
-/** From list/kanban body; default 80, clamped 20–500. */
+/** From list/kanban body; default 20, clamped 20–500. */
 export function parseDescriptionTruncateLength(body) {
   const raw = body?.description_truncate_length ?? body?.truncated_length;
   const n = Number(raw);
