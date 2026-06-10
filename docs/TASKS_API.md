@@ -352,7 +352,9 @@ Search `public.contacts` for filter dropdowns and assignee pickers. Use **`filte
 |-----------------|------|-------------|
 | `autocomplete` | boolean | `true` → prefix search on display name (name or email) |
 | `search_column` | string | `name` (default), `email`, `phone`, `first_name`, `last_name` |
-| `search_operator` | string | `starts_with` \| `contains` \| `ends_with` (default `contains`) |
+| `search_operator` | string | `starts_with` \| `contains` \| `ends_with` \| `equal` (default `contains`) |
+
+`equal` — case-insensitive exact match on `search_column` (no partial match).
 
 Empty `q` returns up to `limit` rows sorted by display name.
 
@@ -430,7 +432,7 @@ Search **`auth.users`** (assignees synced from GHL). Same filter pattern as `con
 |-----------------|------|-------------|
 | `autocomplete` | boolean | `true` → prefix search on display name |
 | `search_column` | string | `name` (default) or `email` |
-| `search_operator` | string | `starts_with` \| `contains` \| `ends_with` (default `contains`) |
+| `search_operator` | string | `starts_with` \| `contains` \| `ends_with` \| `equal` (default `contains`) |
 
 ### Response
 

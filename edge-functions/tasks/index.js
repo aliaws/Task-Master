@@ -4,7 +4,13 @@ import { handleList } from "./list.js";
 import { handleTaskDetail } from "./task-detail.js";
 import { handleTagsSearch } from "./tags-action.js";
 import { handleContactsLookup } from "./contacts-action.js";
-import { handleUsersLookup } from "./users-action.js";
+import { handleCountryCodes } from "./country-codes-action.js";
+import {
+  handleUserCreate,
+  handleUserDelete,
+  handleUsersLookup,
+  handleUserUpdate,
+} from "./users-action.js";
 import { corsPreflightResponse, jsonResponse } from "./utils.js";
 
 const ACTIONS = [
@@ -14,7 +20,11 @@ const ACTIONS = [
   "tags",
   "boards",
   "contacts",
+  "country_codes",
   "users",
+  "user_create",
+  "user_update",
+  "user_delete",
 ];
 
 function parseAction(req, body) {
@@ -22,7 +32,8 @@ function parseAction(req, body) {
   const fromQuery = url.searchParams.get("action");
   const fromBody = body?.action;
 
-  return (fromBody || fromQuery || "kanban").toLowerCase();
+  const raw = (fromBody || fromQuery || "kanban").toLowerCase();
+  return raw.replace(/-/g, "_");
 }
 
 Deno.serve(async (req) => {
@@ -55,7 +66,11 @@ Deno.serve(async (req) => {
             tags: "?action=tags",
             boards: "?action=boards",
             contacts: "?action=contacts",
+            country_codes: "?action=country_codes",
             users: "?action=users",
+            user_create: "?action=user_create",
+            user_update: "?action=user_update",
+            user_delete: "?action=user_delete",
           },
         },
         400
@@ -76,8 +91,16 @@ Deno.serve(async (req) => {
       result = await handleTagsSearch(body);
     } else if (action === "contacts") {
       result = await handleContactsLookup(body);
+    } else if (action === "country_codes") {
+      result = await handleCountryCodes();
     } else if (action === "users") {
       result = await handleUsersLookup(body);
+    } else if (action === "user_create") {
+      result = await handleUserCreate(body);
+    } else if (action === "user_update") {
+      result = await handleUserUpdate(body);
+    } else if (action === "user_delete") {
+      result = await handleUserDelete(body);
     }
 
     return jsonResponse({ success: true, action, ...result });

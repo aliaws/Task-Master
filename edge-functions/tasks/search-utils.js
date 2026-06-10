@@ -1,4 +1,9 @@
-const SEARCH_OPERATORS = new Set(["starts_with", "contains", "ends_with"]);
+const SEARCH_OPERATORS = new Set([
+  "starts_with",
+  "contains",
+  "ends_with",
+  "equal",
+]);
 
 export function normalizeSearchOperator(mode) {
   if (mode == null || mode === "") return "contains";
@@ -8,12 +13,14 @@ export function normalizeSearchOperator(mode) {
     startswith: "starts_with",
     stars_with: "starts_with",
     endswith: "ends_with",
+    equals: "equal",
+    eq: "equal",
   };
 
   const normalized = aliases[key] ?? key;
   if (!SEARCH_OPERATORS.has(normalized)) {
     throw new Error(
-      'filters.search_operator must be "starts_with", "contains", or "ends_with".'
+      'filters.search_operator must be "starts_with", "contains", "ends_with", or "equal".'
     );
   }
   return normalized;
@@ -25,6 +32,7 @@ export function escapeLikePattern(value) {
 
 export function buildIlikePattern(term, operator) {
   const escaped = escapeLikePattern(term);
+  if (operator === "equal") return escaped;
   if (operator === "starts_with") return `${escaped}%`;
   if (operator === "ends_with") return `%${escaped}`;
   return `%${escaped}%`;
