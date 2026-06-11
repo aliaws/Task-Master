@@ -56,6 +56,7 @@ const getTasks = async (
       tb.subtasks,
       tb.attachments,
       tb.due_date,
+      tb.time_start_at,
       tb.data_source,
       tb.created_at,
       tb.status_id,

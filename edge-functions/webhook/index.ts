@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { logWebhookEvent, newRequestId } from "./audit.ts";
+import { handleTaskEmailFromDbWebhook } from "./email-notify.ts";
 import { pushContactToGhl, pushUserToGhl } from "./handlers.ts";
 import { pushTaskToGhl } from "./push-task.ts";
 import { shouldSkipOutbound } from "./loop-guard.ts";
@@ -173,16 +174,50 @@ serve(async (req: Request) => {
     return json({ request_id: requestId, status: "skipped", reason: "DELETE not supported" });
   }
 
+  let ghlResult: Record<string, unknown>;
+  let ghlError: string | null = null;
+
   try {
-    const result = await runPush(
+    ghlResult = await runPush(
       entityType,
       eventType,
       record,
       body.old_record ?? null
     );
-    return json({ success: true, ...result });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return json({ success: false, error: message }, 500);
+    ghlError = err instanceof Error ? err.message : String(err);
+    ghlResult = { status: "failed", error: ghlError };
   }
+
+  let email: Record<string, unknown> | undefined;
+  if (entityType === "task" && eventType === "UPDATE") {
+    try {
+      email = await handleTaskEmailFromDbWebhook(
+        record,
+        body.old_record ?? null
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("task email notification error:", message);
+      email = { error: message };
+    }
+  }
+
+  if (ghlError) {
+    return json(
+      {
+        success: false,
+        error: ghlError,
+        ...ghlResult,
+        ...(email !== undefined ? { email } : {}),
+      },
+      500
+    );
+  }
+
+  return json({
+    success: true,
+    ...ghlResult,
+    ...(email !== undefined ? { email } : {}),
+  });
 });
