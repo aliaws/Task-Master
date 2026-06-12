@@ -269,11 +269,13 @@ apikey: <anon-key>
 | Task columns | `title`, `description`, `priority`, `status_id`, `tags`, `subtasks`, `attachments`, `due_date`, `time_start_at`, `assigned_to`, `contact_id` |
 | `data_source` | Set to **`task_master`** on app edits (required for email notifications) |
 
+`last_changed_by_user_id` is set automatically on PATCH when the user sends a **logged-in JWT** (`Authorization: Bearer <access_token>`). You can also set it explicitly in the PATCH body. Used for **`changed_by_name`** in emails (falls back to **Someone** if missing).
+
 Do **not** send `time_spent` — use **`task-timer`**.
 
 Set secrets in **Supabase Dashboard → Edge Functions → Secrets**, then deploy **`webhook`** (SMTP secrets on **webhook**). For local dev, use `.env` (see **Environment**).
 
-**Email notifications (async via Supabase Database Webhook):** when `priority`, `status_id`, `due_date`, or `assigned_to` change on a row with **`data_source: task_master`**, the **Supabase DB Webhook** on `tasks` UPDATE calls **`webhook`**, which sends SMTP emails and logs to `email_notifications`. Emails show **Someone** as the editor for now. Requires migrations through `20260613120000_email_templates_task_master_branding.sql`.
+**Email notifications (async via Supabase Database Webhook):** when `priority`, `status_id`, `due_date`, or `assigned_to` change on a row with **`data_source: task_master`**, the **Supabase DB Webhook** on `tasks` UPDATE calls **`webhook`**, which sends SMTP emails and logs to `email_notifications`. Editor name comes from **`last_changed_by_user_id`**. Requires migrations through `20260615120000_task_last_changed_by_user_id.sql`.
 
 **Country codes:**
 
@@ -407,6 +409,7 @@ edge-functions/webhook/
 ├── push-contact.ts    # contacts → GHL
 ├── email-notify.ts    # compare old_record/record, email_notifications, SMTP
 ├── email-smtp.ts      # nodemailer
+├── email-caller.ts    # resolve changed_by_name from last_changed_by_user_id
 ├── email-db.ts        # postgres for email_templates / email_notifications
 ├── ghl-client.ts
 ├── ghl-payloads.ts
@@ -436,11 +439,11 @@ Webhook **always pushes** inserts/updates. `data_source` is not used to skip.
 
 **Loop prevention:** after push, only `ghl_id` + `updated_at` written back; webhook skips if only those changed.
 
-**Task emails:** only on **`tasks` UPDATE** when `data_source` is **`task_master`** and watched fields changed. Assignee changes email the **new** assignee. Editor name in email is **Someone** for now.
+**Task emails:** only on **`tasks` UPDATE** when `data_source` is **`task_master`** and watched fields changed. Assignee changes email the **new** assignee. Editor name from **`last_changed_by_user_id`** (auto-set from JWT on PATCH).
 
 **Audit:** two rows per GHL run in `public.webhooks` (`started` → `completed` / `failed` / `skipped`).
 
-App edits should set `data_source: 'task_master'` on the row — that triggers the DB webhook for GHL + email.
+App edits should set `data_source: 'task_master'` on the row. PATCH with a **user JWT** so `last_changed_by_user_id` is captured — that triggers the DB webhook for GHL + email.
 
 See [docs/WEBHOOK_API.md](docs/WEBHOOK_API.md).
 
@@ -503,7 +506,7 @@ On Edge Functions:
 ## Frontend integration checklist
 
 1. **Read tasks** → `POST /functions/v1/tasks` with `kanban`, `list`, or `task_detail`
-2. **Update tasks** → `PATCH /rest/v1/tasks?id=eq.{id}` with task columns + `data_source: task_master`
+2. **Update tasks** → `PATCH /rest/v1/tasks?id=eq.{id}` with task columns + `data_source: task_master` (use **user JWT**, not anon key only)
 3. **Timer tick** → `POST /functions/v1/task-timer` to append seconds
 4. **Do not PATCH** `time_spent`, `action`, `contact`, `time_spent_in_words`, or `description_truncated` to PostgREST
 5. **Users** → `user_create` / `user_update` / `user_delete` on the **tasks** function
@@ -511,12 +514,15 @@ On Edge Functions:
 **Supabase JS (update task):**
 
 ```javascript
-const { data, error } = await supabase
+const { data, error } = const { data: { session } } = await supabase.auth.getSession();
+
+await supabase
   .from('tasks')
   .update({
     title: '...',
     status_id: 1,
     data_source: 'task_master',
+    // last_changed_by_user_id set automatically by DB trigger when session JWT is used
   })
   .eq('id', 424)
   .select()

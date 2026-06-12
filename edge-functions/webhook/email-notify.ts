@@ -1,8 +1,7 @@
 import { sql } from "./email-db.ts";
+import { resolveCallerFromUserId, type TaskCaller } from "./email-caller.ts";
 import { sendSmtpEmail } from "./email-smtp.ts";
 import { shouldSkipOutbound } from "./loop-guard.ts";
-
-const DEFAULT_CALLER = { id: null, name: "Someone", email: null };
 
 const WATCHED_FIELD_KEYS = [
   "priority",
@@ -59,29 +58,41 @@ function snapshotFromRecord(record: Record<string, unknown>): TaskSnapshot {
   };
 }
 
-function buildPatchFromDbRecords(
+function detectChangesFromDbRecords(
   oldRecord: Record<string, unknown>,
   record: Record<string, unknown>
 ) {
   const before = snapshotFromRecord(oldRecord);
   const patch: Record<string, unknown> = {};
+  const changes: DetectedChange[] = [];
 
   for (const field of WATCHED_FIELD_KEYS) {
     const oldVal = oldRecord[field];
     const newVal = record[field];
     if (fieldValuesEqual(field, oldVal, newVal)) continue;
+
+    const templateKey = WATCHED_FIELDS[field];
     patch[field] = newVal;
+    changes.push({ field, templateKey, oldVal, newVal });
   }
 
-  return { before, patch };
+  return { before, patch, changes };
+}
+
+async function loadTaskEmailContext(taskId: number) {
+  const rows = await sql<
+    { title: string | null; last_changed_by_user_id: string | null }[]
+  >`
+    SELECT title, last_changed_by_user_id
+    FROM public.tasks
+    WHERE id = ${taskId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
 }
 
 function appBaseUrl() {
-  return (
-    Deno.env.get("APP_BASE_URL") ??
-    Deno.env.get("TASK_APP_BASE_URL") ??
-    ""
-  ).replace(/\/$/, "");
+  return (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
 }
 
 function taskUrl(taskId: number) {
@@ -98,30 +109,6 @@ function fieldValuesEqual(field: string, a: unknown, b: unknown) {
     return left === right;
   }
   return String(a ?? "") === String(b ?? "");
-}
-
-export function detectWatchedChanges(
-  before: TaskSnapshot,
-  patch: Record<string, unknown>
-) {
-  const changes: DetectedChange[] = [];
-
-  for (const [field, templateKey] of Object.entries(WATCHED_FIELDS)) {
-    if (!(field in patch)) continue;
-
-    const oldVal = before[field as keyof TaskSnapshot];
-    const newVal = patch[field];
-    if (fieldValuesEqual(field, oldVal, newVal)) continue;
-
-    changes.push({
-      field,
-      templateKey,
-      oldVal,
-      newVal,
-    });
-  }
-
-  return changes;
 }
 
 function formatDueDate(value: unknown) {
@@ -304,7 +291,7 @@ async function sendChangeNotification({
   taskId: number;
   taskTitle: string;
   change: DetectedChange;
-  caller: { id: string | null; name: string; email: string | null };
+  caller: TaskCaller;
   afterTask: TaskSnapshot;
 }) {
   const changedByName = caller.name || "Someone";
@@ -334,7 +321,6 @@ async function sendChangeNotification({
   const changedAt = formatChangedAt();
   const vars = {
     changed_by_name: changedByName,
-    actor_name: changedByName,
     headline: renderTemplate(HEADLINES[change.templateKey], {
       changed_by_name: changedByName,
       new_value: newDisplay,
@@ -415,20 +401,26 @@ export async function handleTaskEmailFromDbWebhook(
     throw new Error("Invalid task id in webhook record");
   }
 
-  const { before, patch } = buildPatchFromDbRecords(oldRecord, record);
-  const changes = detectWatchedChanges(before, patch);
+  const { before, patch, changes } = detectChangesFromDbRecords(
+    oldRecord,
+    record
+  );
   if (!changes.length) {
     return { skipped: true, reason: "no watched field changes" };
   }
 
   const requestId = crypto.randomUUID();
-  const caller = DEFAULT_CALLER;
+  const taskRow = await loadTaskEmailContext(taskId);
+  const caller = await resolveCallerFromUserId(
+    taskRow?.last_changed_by_user_id ?? record.last_changed_by_user_id
+  );
 
   const afterTask = { ...before, ...patch } as TaskSnapshot;
   const taskTitle =
-    record.title != null
-      ? String(record.title)
-      : before.title ?? `Task #${taskId}`;
+    taskRow?.title ??
+    (record.title != null ? String(record.title) : null) ??
+    before.title ??
+    `Task #${taskId}`;
 
   for (const change of changes) {
     await sendChangeNotification({
