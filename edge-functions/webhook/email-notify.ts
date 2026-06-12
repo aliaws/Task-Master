@@ -95,10 +95,41 @@ function appBaseUrl() {
   return (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
 }
 
-function taskUrl(taskId: number) {
+/** Postgres bigint identity columns may arrive as string or bigint from the driver. */
+function toPositiveInt(value: unknown, label: string): number {
+  const n =
+    typeof value === "bigint"
+      ? Number(value)
+      : typeof value === "string"
+        ? Number(value.trim())
+        : Number(value);
+
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`Invalid ${label}: ${value}`);
+  }
+  return n;
+}
+
+/** View Task link: {APP_BASE_URL}/?task={taskId}&from=kanban&notification_id={notificationId} */
+function taskUrl(taskId: unknown, notificationId: unknown) {
+  const taskIdInt = toPositiveInt(taskId, "task id for email link");
+  const notificationIdInt = toPositiveInt(
+    notificationId,
+    "notification id for email link"
+  );
+
   const base = appBaseUrl();
-  if (!base) return `#task-${taskId}`;
-  return `${base}/?task=${taskId}&from=kanban`;
+  if (!base) {
+    throw new Error(
+      "APP_BASE_URL is not set — cannot build View Task link for notification email"
+    );
+  }
+
+  const url = new URL("/", `${base}/`);
+  url.searchParams.set("task", String(taskIdInt));
+  url.searchParams.set("from", "kanban");
+  url.searchParams.set("notification_id", String(notificationIdInt));
+  return url.href;
 }
 
 function fieldValuesEqual(field: string, a: unknown, b: unknown) {
@@ -243,7 +274,9 @@ async function insertNotification(row: {
     )
     RETURNING id
   `;
-  return rows[0]?.id;
+  const rawId = rows[0]?.id;
+  if (rawId == null) return undefined;
+  return toPositiveInt(rawId, "notification id");
 }
 
 async function updateNotification(
@@ -319,7 +352,7 @@ async function sendChangeNotification({
   ]);
 
   const changedAt = formatChangedAt();
-  const vars = {
+  const baseVars = {
     changed_by_name: changedByName,
     headline: renderTemplate(HEADLINES[change.templateKey], {
       changed_by_name: changedByName,
@@ -330,7 +363,6 @@ async function sendChangeNotification({
     old_value: oldDisplay,
     new_value: newDisplay,
     changed_at: changedAt,
-    task_url: taskUrl(taskId),
   };
 
   const template = await loadEmailTemplate(change.templateKey);
@@ -338,8 +370,7 @@ async function sendChangeNotification({
     throw new Error(`Email template not found: ${change.templateKey}`);
   }
 
-  const subject = renderTemplate(template.subject_template, vars);
-  const html = renderTemplate(template.body_html_template, vars);
+  const subject = renderTemplate(template.subject_template, baseVars);
 
   const notificationId = await insertNotification({
     request_id: requestId,
@@ -360,11 +391,17 @@ async function sendChangeNotification({
   }
 
   try {
+    const html = renderTemplate(template.body_html_template, {
+      ...baseVars,
+      task_url: taskUrl(taskId, notificationId),
+    });
+
     const messageId = await sendSmtpEmail({
       to: recipientEmail,
       subject,
       html,
     });
+
     await updateNotification(notificationId, {
       status: "sent",
       provider_message_id: messageId,
@@ -372,10 +409,22 @@ async function sendChangeNotification({
       error_message: null,
     });
   } catch (err) {
-    await updateNotification(notificationId, {
-      status: "failed",
-      error_message: err instanceof Error ? err.message : String(err),
-    });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `email notification ${notificationId} delivery failed:`,
+      message
+    );
+    try {
+      await updateNotification(notificationId, {
+        status: "failed",
+        error_message: message,
+      });
+    } catch (updateErr) {
+      console.error(
+        `failed to mark notification ${notificationId} as failed:`,
+        updateErr
+      );
+    }
   }
 }
 

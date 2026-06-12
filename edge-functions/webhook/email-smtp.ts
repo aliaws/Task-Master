@@ -69,22 +69,37 @@ export async function sendSmtpEmail({
 }) {
   const { host, port, user, pass, from, secure } = smtpConfig();
 
+  const timeoutMs = Number(Deno.env.get("SMTP_TIMEOUT_MS") ?? "25000");
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("SMTP_TIMEOUT_MS must be a positive number");
+  }
+
   const transporter = nodemailer.createTransport({
     host,
     port,
     secure,
     auth: { user, pass },
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 20_000,
+  });
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`SMTP send timed out after ${timeoutMs}ms`)),
+      timeoutMs
+    );
   });
 
   try {
-    const info = await transporter.sendMail({
-      from,
-      to,
-      subject,
-      html,
-    });
+    const info = await Promise.race([
+      transporter.sendMail({ from, to, subject, html }),
+      timeoutPromise,
+    ]);
     return info?.messageId ?? null;
   } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
     transporter.close();
   }
 }

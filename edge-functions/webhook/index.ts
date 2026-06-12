@@ -177,6 +177,18 @@ serve(async (req: Request) => {
   let ghlResult: Record<string, unknown>;
   let ghlError: string | null = null;
 
+  // Run task emails in parallel with GHL push to reduce edge-function timeouts.
+  const emailPromise =
+    entityType === "task" && eventType === "UPDATE"
+      ? handleTaskEmailFromDbWebhook(record, body.old_record ?? null).catch(
+          (err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error("task email notification error:", message);
+            return { error: message };
+          }
+        )
+      : null;
+
   try {
     ghlResult = await runPush(
       entityType,
@@ -189,19 +201,7 @@ serve(async (req: Request) => {
     ghlResult = { status: "failed", error: ghlError };
   }
 
-  let email: Record<string, unknown> | undefined;
-  if (entityType === "task" && eventType === "UPDATE") {
-    try {
-      email = await handleTaskEmailFromDbWebhook(
-        record,
-        body.old_record ?? null
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error("task email notification error:", message);
-      email = { error: message };
-    }
-  }
+  const email = emailPromise ? await emailPromise : undefined;
 
   if (ghlError) {
     return json(

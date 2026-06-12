@@ -17,6 +17,7 @@ function mapDetailRow(row) {
     contact: buildContact(row),
     assigned_to: buildAssignee(row),
     due_date: row.due_date,
+    time_start_at: row.time_start_at ?? null,
     ghl_id: row.ghl_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -41,6 +42,7 @@ export async function handleTaskDetail(body) {
   const rows = await sql`
     SELECT
       ${TASK_SELECT_CORE},
+      tb.time_start_at,
       tb.subtasks,
       tb.attachments,
       tb.tags
