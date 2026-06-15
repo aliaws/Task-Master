@@ -219,6 +219,9 @@ Manual SQL fallback: [sample-data/03_country_codes_user_profiles.sql](sample-dat
 | `user_update` | Update Supabase Auth user; optional GHL sync |
 | `user_delete` | Delete Auth user; unassigns tasks by default |
 | `update_task_order` | Bulk update `tasks.task_order` for kanban drag-and-drop (no `status_id` in payload) |
+| `comment_create` | Add a comment to a task |
+| `comment_update` | Edit a comment by `id` |
+| `comment_delete` | Delete a comment by `id` |
 
 Default action if omitted: **`kanban`**.
 
@@ -278,6 +281,49 @@ Unknown `task_id` values are listed in `not_found` (other rows still update). Ma
 ```json
 { "action": "task_detail", "id": 424 }
 ```
+
+**Task detail response** includes `comments` array alongside `logs`, `subtasks`, `tags`, etc.:
+
+```json
+{
+  "data": {
+    "id": 424,
+    "comments": [
+      {
+        "id": 1,
+        "content": "Great progress!",
+        "user_id": "bba0a253-...",
+        "display_name": "Ali Abbas - AG",
+        "initials": "AA-A",
+        "created_at": "2026-06-16T12:00:00.000Z",
+        "updated_at": "2026-06-16T12:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+#### Task comments
+
+| Action | Payload | Purpose |
+|--------|---------|---------|
+| `comment_create` | `{ "task_id": 42, "content": "...", "user_id": "auth-uuid" }` | Add comment to task |
+| `comment_update` | `{ "id": 1, "content": "edited text" }` | Update comment content |
+| `comment_delete` | `{ "id": 1 }` | Delete comment |
+
+**`comment_create`** — `task_id` (integer), `content` (required), `user_id` (required auth UUID). `display_name` and `initials` are auto-resolved from `auth.users`.
+
+**Response:**
+
+```json
+{ "success": true, "action": "comment_create", "data": { "id": 1, "content": "...", "user_id": "bba0a253-...", "display_name": "Ali Abbas - AG", "initials": "AA-A", "created_at": "...", "updated_at": "..." } }
+```
+
+**`comment_update`** — `id` (integer comment id), `content` (required new text). Returns full updated comment.
+
+**`comment_delete`** — `id` (integer comment id). Returns `{ "deleted": true, "id": 1 }`.
+
+Comments do **not** trigger GHL sync or email notifications. No JWT verification — `user_id` is trusted from the request body.
 
 **Update tasks** (PostgREST — triggers GHL + email via Supabase DB Webhook on `tasks` UPDATE):
 
@@ -586,7 +632,8 @@ On Edge Functions:
 4. **Reorder kanban** → `POST /functions/v1/tasks` with `action: update_task_order` and `tasks: [{ task_id, task_order }, ...]`
 5. **Do not PATCH** `time_spent`, `action`, `contact`, `time_spent_in_words`, or `description_truncated` to PostgREST
 6. **Users** → `user_create` / `user_update` / `user_delete` on the **tasks** function
-6. **Email link open** → on `/?task={id}&from=kanban&notification_id={id}`, `POST /functions/v1/notification-view` with `{ "log_id": <id> }` or `{ "notification_id": <id> }` (fire-and-forget)
+7. **Email link open** → on `/?task={id}&from=kanban&notification_id={id}`, `POST /functions/v1/notification-view` with `{ "log_id": <id> }` or `{ "notification_id": <id> }` (fire-and-forget)
+8. **Comments** → `comment_create` / `comment_update` / `comment_delete` on the **tasks** function
 
 **Supabase JS (update task):**
 

@@ -167,6 +167,136 @@ Flat paginated task list for tables / mobile list views.
 - `overdue` — `due_date < now`, excluding completed board
 - `coming` — `due_date > now`
 
+### Task detail response includes `logs` and `comments`
+
+The `task_detail` response includes a `logs` array (task change history) and a `comments` array (user comments), in addition to all task fields.
+
+```json
+{
+  "success": true,
+  "action": "task_detail",
+  "data": {
+    "id": 42,
+    "...": "...",
+    "logs": [
+      {
+        "id": 105,
+        "field_name": "priority",
+        "old_display_value": "High",
+        "new_display_value": "Low",
+        "changed_by_name": "Ali",
+        "is_viewed": true,
+        "viewed_at": "2026-06-15T12:00:00.000Z",
+        "created_at": "2026-06-15T11:30:00.000Z"
+      }
+    ],
+    "comments": [
+      {
+        "id": 1,
+        "content": "Great progress!",
+        "user_id": "bba0a253-...",
+        "display_name": "Ali Abbas - AG",
+        "initials": "AA-A",
+        "created_at": "2026-06-16T12:00:00.000Z",
+        "updated_at": "2026-06-16T12:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 9. Task Comments
+
+Add, edit, and delete comments on tasks via the `tasks` edge function.
+
+| Action | Purpose |
+|--------|---------|
+| `comment_create` | Add a comment to a task |
+| `comment_update` | Edit a comment by `id` |
+| `comment_delete` | Delete a comment by `id` |
+
+### `comment_create`
+
+```json
+{
+  "action": "comment_create",
+  "task_id": 42,
+  "content": "Great work on this task!",
+  "user_id": "bba0a253-8eab-43ed-afdf-c9014ca319f2"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `task_id` | integer | yes | `tasks.id` |
+| `content` | string | yes | Comment text |
+| `user_id` | string | yes | Auth user UUID — `display_name` and `initials` auto-resolved from `auth.users` |
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "action": "comment_create",
+  "data": {
+    "id": 1,
+    "content": "Great work on this task!",
+    "user_id": "bba0a253-8eab-43ed-afdf-c9014ca319f2",
+    "display_name": "Ali Abbas - AG",
+    "initials": "AA-A",
+    "created_at": "2026-06-16T12:00:00.000Z",
+    "updated_at": "2026-06-16T12:00:00.000Z"
+  }
+}
+```
+
+### `comment_update`
+
+```json
+{
+  "action": "comment_update",
+  "id": 1,
+  "content": "Updated comment text"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | integer | yes | `task_comments.id` |
+| `content` | string | yes | New comment text |
+
+**Response:** full updated comment object.
+
+### `comment_delete`
+
+```json
+{
+  "action": "comment_delete",
+  "id": 1
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | integer | yes | `task_comments.id` to delete |
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "action": "comment_delete",
+  "deleted": true,
+  "id": 1
+}
+```
+
+Comments do **not** trigger GHL sync or email notifications.
+
+---
+
 ### Response row shape
 
 ```json
@@ -218,7 +348,7 @@ Flat paginated task list for tables / mobile list views.
 
 ## 3. `task_detail`
 
-Single task with subtasks, attachments, and tags.
+Single task with subtasks, attachments, tags, change logs, and comments.
 
 ### Body
 
