@@ -14,7 +14,7 @@ Task-Master/
 │   ├── sync-ghl/          # Inbound: GHL → Supabase (contacts, tasks, users)
 │   ├── tasks/             # Task board API (read + user CRUD)
 │   ├── task-timer/        # Append time sessions; return total time_spent
-│   ├── notification-view/ # Mark email_notifications viewed (first open from email)
+│   ├── notification-view/ # Mark task_change_logs viewed (first open from email)
 │   ├── webhook/           # Outbound GHL sync + task email notifications
 │   ├── refresh-token/     # GHL OAuth token refresh
 │   └── password-validate-send-otp.ts
@@ -308,7 +308,7 @@ Do **not** send `time_spent` — use **`task-timer`**.
 
 Set secrets in **Supabase Dashboard → Edge Functions → Secrets**, then deploy **`webhook`** (SMTP secrets on **webhook**). For local dev, use `.env` (see **Environment**).
 
-**Email notifications (async via Supabase Database Webhook):** when `priority`, `status_id`, `due_date`, or `assigned_to` change on a row with **`data_source: task_master`**, the **Supabase DB Webhook** on `tasks` UPDATE calls **`webhook`**, which sends SMTP emails and logs to `email_notifications`. Editor name comes from **`last_changed_by_user_id`**. Requires migrations through `20260615120000_task_last_changed_by_user_id.sql`.
+**Task change log (async via Supabase Database Webhook):** when a tracked field (`title`, `description`, `priority`, `status_id`, `due_date`, `assigned_to`, `contact_id`, `tags`, `subtasks`, `attachments`) changes on a row with **`data_source: task_master`**, the **Supabase DB Webhook** on `tasks` UPDATE calls **`webhook`**, which writes to **`task_change_logs`** and sends SMTP emails when `priority`, `status_id`, `due_date`, or `assigned_to` change. `time_start_at` and `task_order` changes are **not** logged. Editor name comes from **`last_changed_by_user_id`**. Requires migrations through `20260617130000_task_change_logs_rename.sql`.
 
 **Country codes:**
 
@@ -440,10 +440,10 @@ edge-functions/webhook/
 ├── index.ts           # GHL DB webhook + task email on tasks UPDATE
 ├── push-task.ts       # tasks → GHL
 ├── push-contact.ts    # contacts → GHL
-├── email-notify.ts    # compare old_record/record, email_notifications, SMTP
+├── email-notify.ts    # task_change_logs + SMTP for watched field changes
 ├── email-smtp.ts      # nodemailer
 ├── email-caller.ts    # resolve changed_by_name from last_changed_by_user_id
-├── email-db.ts        # postgres for email_templates / email_notifications
+├── email-db.ts        # postgres for email_templates / task_change_logs
 ├── ghl-client.ts
 ├── ghl-payloads.ts
 ├── loop-guard.ts
@@ -474,7 +474,7 @@ Webhook **always pushes** inserts/updates. `data_source` is not used to skip.
 
 **Task emails:** only on **`tasks` UPDATE** when `data_source` is **`task_master`** and watched fields changed. Assignee changes email the **new** assignee. Editor name from **`last_changed_by_user_id`** (auto-set from JWT on PATCH).
 
-**View Task link:** `{APP_BASE_URL}/?task={task_id}&from=kanban&notification_id={email_notifications.id}` — requires migration `20260616120000_email_notification_view_tracking.sql`.
+**View Task link:** `{APP_BASE_URL}/?task={task_id}&from=kanban&notification_id={task_change_logs.id}` — requires migration `20260617130000_task_change_logs_rename.sql`.
 
 **Audit:** two rows per GHL run in `public.webhooks` (`started` → `completed` / `failed` / `skipped`).
 
@@ -500,8 +500,10 @@ Requires **`SUPABASE_DB_URL`**. **CORS:** `OPTIONS` preflight, `POST` only.
 **Mark viewed (idempotent — only first view updates `viewed_at`):**
 
 ```json
-{ "notification_id": 42 }
+{ "log_id": 42 }
 ```
+
+Also accepts `notification_id` (same id) for backward-compatible email links.
 
 **Response (first view):**
 
@@ -509,6 +511,7 @@ Requires **`SUPABASE_DB_URL`**. **CORS:** `OPTIONS` preflight, `POST` only.
 {
   "success": true,
   "first_view": true,
+  "log_id": 42,
   "notification_id": 42,
   "task_id": 769,
   "is_viewed": true,
@@ -568,7 +571,7 @@ On Edge Functions:
 |------|--------|
 | `password-validate-send-otp.ts` | Hono; password check + OTP; CORS + `x-api-key` |
 | `task-timer/index.ts` | Append `task_sessions`; return total time |
-| `notification-view/index.ts` | Mark `email_notifications` viewed on first email link open |
+| `notification-view/index.ts` | Mark `task_change_logs` viewed on first email link open |
 | `refresh-token/index.ts` | GHL OAuth refresh |
 | `webhook/index.ts` | GHL push + task emails on `tasks` UPDATE (Supabase DB Webhook) |
 | `sync-task-ghl-localy.js` | Local only, not deployed |
@@ -583,7 +586,7 @@ On Edge Functions:
 4. **Reorder kanban** → `POST /functions/v1/tasks` with `action: update_task_order` and `tasks: [{ task_id, task_order }, ...]`
 5. **Do not PATCH** `time_spent`, `action`, `contact`, `time_spent_in_words`, or `description_truncated` to PostgREST
 6. **Users** → `user_create` / `user_update` / `user_delete` on the **tasks** function
-6. **Email link open** → on `/?task={id}&from=kanban&notification_id={id}`, `POST /functions/v1/notification-view` with `{ "notification_id": <id> }` (fire-and-forget)
+6. **Email link open** → on `/?task={id}&from=kanban&notification_id={id}`, `POST /functions/v1/notification-view` with `{ "log_id": <id> }` or `{ "notification_id": <id> }` (fire-and-forget)
 
 **Supabase JS (update task):**
 

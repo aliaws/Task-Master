@@ -56,5 +56,21 @@ export async function handleTaskDetail(body) {
     return { data: null };
   }
 
-  return { data: mapDetailRow(rows[0]) };
+  const logs = await sql`
+    SELECT
+      id,
+      field_name,
+      old_display_value,
+      new_display_value,
+      changed_by_name,
+      is_viewed,
+      viewed_at,
+      created_at
+    FROM public.task_change_logs
+    WHERE task_id = ${taskIdInt}
+    ORDER BY created_at ASC
+    LIMIT 50
+  `;
+
+  return { data: { ...mapDetailRow(rows[0]), logs } };
 }

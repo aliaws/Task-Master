@@ -16,12 +16,24 @@ function json(res: unknown, status = 200) {
   });
 }
 
-type NotificationRow = {
+type LogRow = {
   id: number;
   task_id: number;
   is_viewed: boolean;
   viewed_at: string | null;
 };
+
+function formatResponse(row: LogRow, firstView: boolean) {
+  return {
+    success: true,
+    first_view: firstView,
+    log_id: row.id,
+    notification_id: row.id,
+    task_id: row.task_id,
+    is_viewed: row.is_viewed,
+    viewed_at: row.viewed_at,
+  };
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -33,64 +45,47 @@ Deno.serve(async (req: Request) => {
       return json({ success: false, error: "Method not allowed. Use POST." }, 405);
     }
 
-    const dbUrl = Deno.env.get("SUPABASE_DB_URL");
-    if (!dbUrl) {
+    if (!Deno.env.get("SUPABASE_DB_URL")) {
       return json({ success: false, error: "SUPABASE_DB_URL not configured" }, 500);
     }
 
     const body = await req.json().catch(() => ({}));
-    const rawId = body.notification_id ?? body.id;
-    const notificationId = Number(rawId);
+    const rawId = body.log_id ?? body.notification_id ?? body.id;
+    const logId = Number(rawId);
 
-    if (!Number.isInteger(notificationId) || notificationId <= 0) {
+    if (!Number.isInteger(logId) || logId <= 0) {
       return json(
-        { success: false, error: "notification_id must be a positive integer" },
+        {
+          success: false,
+          error: "log_id (or notification_id) must be a positive integer",
+        },
         400
       );
     }
 
-    const updated = await sql<NotificationRow[]>`
-      UPDATE public.email_notifications
-      SET
-        is_viewed = true,
-        viewed_at = now()
-      WHERE id = ${notificationId}
-        AND viewed_at IS NULL
+    const updated = await sql<LogRow[]>`
+      UPDATE public.task_change_logs
+      SET is_viewed = true, viewed_at = now()
+      WHERE id = ${logId} AND viewed_at IS NULL
       RETURNING id, task_id, is_viewed, viewed_at
     `;
 
     if (updated.length) {
-      const row = updated[0];
-      return json({
-        success: true,
-        first_view: true,
-        notification_id: row.id,
-        task_id: row.task_id,
-        is_viewed: row.is_viewed,
-        viewed_at: row.viewed_at,
-      });
+      return json(formatResponse(updated[0], true));
     }
 
-    const existing = await sql<NotificationRow[]>`
+    const existing = await sql<LogRow[]>`
       SELECT id, task_id, is_viewed, viewed_at
-      FROM public.email_notifications
-      WHERE id = ${notificationId}
+      FROM public.task_change_logs
+      WHERE id = ${logId}
       LIMIT 1
     `;
 
     if (!existing.length) {
-      return json({ success: false, error: "Notification not found" }, 404);
+      return json({ success: false, error: "Log entry not found" }, 404);
     }
 
-    const row = existing[0];
-    return json({
-      success: true,
-      first_view: false,
-      notification_id: row.id,
-      task_id: row.task_id,
-      is_viewed: row.is_viewed,
-      viewed_at: row.viewed_at,
-    });
+    return json(formatResponse(existing[0], false));
   } catch (err) {
     return json(
       { success: false, error: err instanceof Error ? err.message : String(err) },
