@@ -34,6 +34,7 @@ function mapListRow(row, descriptionTruncateLength) {
     contact: buildContact(row),
     assigned_to: buildAssignee(row),
     due_date: row.due_date,
+    task_order: Number(row.task_order ?? 0),
     ghl_id: row.ghl_id,
     data_source: row.data_source ?? null,
     created_at: row.created_at,

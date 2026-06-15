@@ -155,6 +155,7 @@ const SORT_COLUMNS = {
   due_date: "tb.due_date",
   priority: "tb.priority",
   title: "tb.title",
+  task_order: "tb.task_order",
 };
 
 export function parseSort(body) {

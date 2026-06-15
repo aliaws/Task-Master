@@ -11,6 +11,7 @@ import {
   handleUsersLookup,
   handleUserUpdate,
 } from "./users-action.js";
+import { handleUpdateTaskOrder } from "./update-task-order-action.js";
 import { corsPreflightResponse, jsonResponse } from "./utils.js";
 
 const ACTIONS = [
@@ -25,6 +26,7 @@ const ACTIONS = [
   "user_create",
   "user_update",
   "user_delete",
+  "update_task_order",
 ];
 
 function parseAction(req, body) {
@@ -71,6 +73,7 @@ Deno.serve(async (req) => {
             user_create: "?action=user_create",
             user_update: "?action=user_update",
             user_delete: "?action=user_delete",
+            update_task_order: "?action=update_task_order",
           },
         },
         400
@@ -101,6 +104,8 @@ Deno.serve(async (req) => {
       result = await handleUserUpdate(body);
     } else if (action === "user_delete") {
       result = await handleUserDelete(body);
+    } else if (action === "update_task_order") {
+      result = await handleUpdateTaskOrder(body);
     }
 
     return jsonResponse({ success: true, action, ...result });

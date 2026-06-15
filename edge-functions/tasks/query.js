@@ -233,6 +233,7 @@ export const TASK_SELECT_CORE = sql`
   tb.priority,
   tb.description,
   tb.due_date,
+  tb.task_order,
   tb.ghl_id,
   tb.data_source,
   tb.created_at,

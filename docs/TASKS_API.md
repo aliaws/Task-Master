@@ -58,9 +58,9 @@ supabase db push
 
 ---
 
-## 1. `kanban` (unchanged)
+## 1. `kanban`
 
-Board columns keyed by `task_boards.name`. Same POST shape as before.
+Board columns keyed by `task_boards.name`. Tasks within each column are ordered by **`task_order` ASC** (then `created_at`). Each task row includes `task_order`.
 
 ### Body
 
@@ -247,9 +247,53 @@ Same fields as list (including `time_spent` and `time_spent_in_words` from `task
 
 `time_spent` is total `duration_seconds` summed from `public.task_sessions` (same as kanban).
 
+Response also includes `task_order` (integer).
+
 ---
 
-## 4. `boards`
+## 4. `update_task_order`
+
+Bulk update `tasks.task_order` for kanban drag-and-drop. Does **not** require `status_id`. Does not trigger task notification emails or GHL push (webhook skips when only `task_order` / `updated_at` change).
+
+### Body
+
+```json
+{
+  "action": "update_task_order",
+  "tasks": [
+    { "task_id": 123, "task_order": 0 },
+    { "task_id": 132, "task_order": 1 }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `tasks` | array | Required, 1–500 items |
+| `tasks[].task_id` | integer | `tasks.id` (alias: `id`) |
+| `tasks[].task_order` | integer | Non-negative; lower = higher in column |
+
+### Response
+
+```json
+{
+  "success": true,
+  "action": "update_task_order",
+  "updated": 2,
+  "tasks": [
+    { "task_id": 123, "task_order": 0 },
+    { "task_id": 132, "task_order": 1 }
+  ]
+}
+```
+
+If any `task_id` does not exist, it appears in `not_found`; other rows still update.
+
+Kanban reads use `ORDER BY task_order ASC` within each column.
+
+---
+
+## 5. `boards`
 
 List kanban columns with ids for building `filters.status`.
 
@@ -274,7 +318,7 @@ List kanban columns with ids for building `filters.status`.
 
 ---
 
-## 5. `tags` (autocomplete)
+## 6. `tags` (autocomplete)
 
 Search the `tags` catalog (see migration SQL).
 
@@ -312,7 +356,7 @@ Dev sample tags/assign SQL: `sample-data/` in the repo root.
 
 ---
 
-## 6. `contacts` (lookup)
+## 7. `contacts` (lookup)
 
 Search `public.contacts` for filter dropdowns and assignee pickers. Use **`filters`** to choose mode.
 
@@ -392,7 +436,7 @@ Empty `q` returns up to `limit` rows sorted by display name.
 
 ---
 
-## 7. `users` (lookup)
+## 8. `users` (lookup)
 
 Search **`auth.users`** (assignees synced from GHL). Same filter pattern as `contacts`.
 

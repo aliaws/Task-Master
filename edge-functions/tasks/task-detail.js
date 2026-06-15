@@ -17,6 +17,7 @@ function mapDetailRow(row) {
     contact: buildContact(row),
     assigned_to: buildAssignee(row),
     due_date: row.due_date,
+    task_order: Number(row.task_order ?? 0),
     time_start_at: row.time_start_at ?? null,
     ghl_id: row.ghl_id,
     created_at: row.created_at,

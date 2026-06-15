@@ -36,16 +36,7 @@ const buildFilters = (filters) => {
   return sql`AND ${result}`;
 };
 
-const getTasks = async (
-  statusId,
-  limit,
-  offset,
-  filters,
-  order
-) => {
-  const orderBy =
-    order === "ASC" ? sql`tb.created_at ASC` : sql`tb.created_at DESC`;
-
+const getTasks = async (statusId, limit, offset, filters) => {
   return await sql`
     SELECT
       tb.id,
@@ -57,6 +48,7 @@ const getTasks = async (
       tb.attachments,
       tb.due_date,
       tb.time_start_at,
+      tb.task_order,
       tb.data_source,
       tb.created_at,
       tb.status_id,
@@ -95,7 +87,7 @@ const getTasks = async (
 
     GROUP BY tb.id, c.id, u.id
 
-    ORDER BY ${orderBy}, tb.priority DESC
+    ORDER BY tb.task_order ASC, tb.id ASC
     LIMIT ${limit}
     OFFSET ${offset};
   `;
@@ -142,7 +134,7 @@ export async function handleKanban(body) {
 
   for (const status of statuses) {
     const [tasks, count] = await Promise.all([
-      getTasks(status.id, limit, offset, filters, order),
+      getTasks(status.id, limit, offset, filters),
       getCount(status.id, filters),
     ]);
 

@@ -14,6 +14,7 @@ Task-Master/
 │   ├── sync-ghl/          # Inbound: GHL → Supabase (contacts, tasks, users)
 │   ├── tasks/             # Task board API (read + user CRUD)
 │   ├── task-timer/        # Append time sessions; return total time_spent
+│   ├── notification-view/ # Mark email_notifications viewed (first open from email)
 │   ├── webhook/           # Outbound GHL sync + task email notifications
 │   ├── refresh-token/     # GHL OAuth token refresh
 │   └── password-validate-send-otp.ts
@@ -78,6 +79,7 @@ Supabase exposes **two different URLs**. Do not mix them up.
 | `tasks.assigned_to` | UUID (Supabase Auth user) |
 | `tasks.data_source` | `engage` (GHL) or `task_master` (app) |
 | `tasks.time_start_at` | timestamptz (nullable) — returned on `kanban`; updatable via PostgREST PATCH |
+| `tasks.task_order` | integer (default `0`) — display order within a kanban column; updated via `update_task_order` |
 | `task_sessions.task_id` | integer → `tasks.id` |
 | `task_sessions.duration_seconds` | number — summed as `time_spent` in API responses |
 | `country_codes.id` | smallint (PK) — dial codes for phone UI |
@@ -172,6 +174,7 @@ edge-functions/tasks/
 ├── contacts-action.js       # action: contacts
 ├── country-codes-action.js  # action: country_codes
 ├── users-action.js          # users lookup + user_create / user_update / user_delete
+├── update-task-order-action.js  # action: update_task_order (bulk kanban reorder)
 ├── user-phone-utils.js
 ├── ghl-user-sync.js
 ├── lookup-utils.js
@@ -204,7 +207,7 @@ Manual SQL fallback: [sample-data/03_country_codes_user_profiles.sql](sample-dat
 
 | Action | Purpose |
 |--------|---------|
-| `kanban` | Tasks grouped by `task_boards.name`; includes `assigned_to`, `time_spent`, `time_start_at`, `data_source`, `description_truncated` |
+| `kanban` | Tasks grouped by `task_boards.name`; sorted by `task_order` ASC; includes `assigned_to`, `time_spent`, `time_start_at`, `task_order`, `data_source`, `description_truncated` |
 | `list` | Paginated flat list; filters: `status`, `priority`, `assign`, `contacts`, `due`, `completed`, `title` + `title_match` |
 | `task_detail` | One task by integer `id`; subtasks, attachments, tags, `time_spent` |
 | `boards` | `task_boards` ids for filter dropdowns |
@@ -215,6 +218,7 @@ Manual SQL fallback: [sample-data/03_country_codes_user_profiles.sql](sample-dat
 | `user_create` | Create Supabase Auth user; optional GHL sync |
 | `user_update` | Update Supabase Auth user; optional GHL sync |
 | `user_delete` | Delete Auth user; unassigns tasks by default |
+| `update_task_order` | Bulk update `tasks.task_order` for kanban drag-and-drop (no `status_id` in payload) |
 
 Default action if omitted: **`kanban`**.
 
@@ -232,7 +236,36 @@ POST /functions/v1/tasks
 }
 ```
 
-Each task in `data` includes `time_start_at` (nullable), `time_spent`, `time_spent_in_words`, `contact`, etc.
+Each task in `data` includes `task_order`, `time_start_at` (nullable), `time_spent`, `time_spent_in_words`, `contact`, etc. Columns are ordered by **`task_order` ASC** (then `created_at`).
+
+**Update task order** (kanban reorder — does not send emails or push to GHL):
+
+```json
+POST /functions/v1/tasks
+{
+  "action": "update_task_order",
+  "tasks": [
+    { "task_id": 123, "task_order": 1 },
+    { "task_id": 132, "task_order": 2 }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "action": "update_task_order",
+  "updated": 2,
+  "tasks": [
+    { "task_id": 123, "task_order": 1 },
+    { "task_id": 132, "task_order": 2 }
+  ]
+}
+```
+
+Unknown `task_id` values are listed in `not_found` (other rows still update). Max **500** items per request.
 
 **List:**
 
@@ -441,11 +474,49 @@ Webhook **always pushes** inserts/updates. `data_source` is not used to skip.
 
 **Task emails:** only on **`tasks` UPDATE** when `data_source` is **`task_master`** and watched fields changed. Assignee changes email the **new** assignee. Editor name from **`last_changed_by_user_id`** (auto-set from JWT on PATCH).
 
+**View Task link:** `{APP_BASE_URL}/?task={task_id}&from=kanban&notification_id={email_notifications.id}` — requires migration `20260616120000_email_notification_view_tracking.sql`.
+
 **Audit:** two rows per GHL run in `public.webhooks` (`started` → `completed` / `failed` / `skipped`).
 
 App edits should set `data_source: 'task_master'` on the row. PATCH with a **user JWT** so `last_changed_by_user_id` is captured — that triggers the DB webhook for GHL + email.
 
 See [docs/WEBHOOK_API.md](docs/WEBHOOK_API.md).
+
+---
+
+### notification-view
+
+Source: `edge-functions/notification-view/index.ts` — record first view when the user opens a task from an email link.
+
+```bash
+supabase db push
+supabase functions deploy notification-view
+```
+
+**URL:** `POST https://<project>.supabase.co/functions/v1/notification-view`
+
+Requires **`SUPABASE_DB_URL`**. **CORS:** `OPTIONS` preflight, `POST` only.
+
+**Mark viewed (idempotent — only first view updates `viewed_at`):**
+
+```json
+{ "notification_id": 42 }
+```
+
+**Response (first view):**
+
+```json
+{
+  "success": true,
+  "first_view": true,
+  "notification_id": 42,
+  "task_id": 769,
+  "is_viewed": true,
+  "viewed_at": "2026-06-16T12:00:00.000Z"
+}
+```
+
+**Response (already viewed):** same shape with `"first_view": false` and the original `viewed_at`.
 
 ---
 
@@ -466,7 +537,7 @@ On Edge Functions:
 |----------|-------------|
 | `SUPABASE_URL` | All |
 | `SUPABASE_SERVICE_ROLE_KEY` | **webhook**, **tasks** (user GHL sync) |
-| `SUPABASE_DB_URL` | **tasks**, **task-timer**, **webhook** (email SQL) |
+| `SUPABASE_DB_URL` | **tasks**, **task-timer**, **notification-view**, **webhook** (email SQL) |
 | `SMTP_HOST` | **webhook** — e.g. `smtp.gmail.com` |
 | `SMTP_PORT` | **webhook** — e.g. `465` |
 | `SMTP_USER` | **webhook** — SMTP login email |
@@ -497,6 +568,7 @@ On Edge Functions:
 |------|--------|
 | `password-validate-send-otp.ts` | Hono; password check + OTP; CORS + `x-api-key` |
 | `task-timer/index.ts` | Append `task_sessions`; return total time |
+| `notification-view/index.ts` | Mark `email_notifications` viewed on first email link open |
 | `refresh-token/index.ts` | GHL OAuth refresh |
 | `webhook/index.ts` | GHL push + task emails on `tasks` UPDATE (Supabase DB Webhook) |
 | `sync-task-ghl-localy.js` | Local only, not deployed |
@@ -508,8 +580,10 @@ On Edge Functions:
 1. **Read tasks** → `POST /functions/v1/tasks` with `kanban`, `list`, or `task_detail`
 2. **Update tasks** → `PATCH /rest/v1/tasks?id=eq.{id}` with task columns + `data_source: task_master` (use **user JWT**, not anon key only)
 3. **Timer tick** → `POST /functions/v1/task-timer` to append seconds
-4. **Do not PATCH** `time_spent`, `action`, `contact`, `time_spent_in_words`, or `description_truncated` to PostgREST
-5. **Users** → `user_create` / `user_update` / `user_delete` on the **tasks** function
+4. **Reorder kanban** → `POST /functions/v1/tasks` with `action: update_task_order` and `tasks: [{ task_id, task_order }, ...]`
+5. **Do not PATCH** `time_spent`, `action`, `contact`, `time_spent_in_words`, or `description_truncated` to PostgREST
+6. **Users** → `user_create` / `user_update` / `user_delete` on the **tasks** function
+6. **Email link open** → on `/?task={id}&from=kanban&notification_id={id}`, `POST /functions/v1/notification-view` with `{ "notification_id": <id> }` (fire-and-forget)
 
 **Supabase JS (update task):**
 

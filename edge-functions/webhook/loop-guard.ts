@@ -1,5 +1,5 @@
-/** Fields updated after a successful GHL push — skip only this to avoid webhook loop. */
-const LOOP_GUARD_FIELDS = new Set(["ghl_id", "updated_at"]);
+/** Skip outbound when only bookkeeping / display-order fields changed. */
+const LOOP_GUARD_FIELDS = new Set(["ghl_id", "updated_at", "task_order"]);
 
 /**
  * Always push task/contact changes to GHL.
