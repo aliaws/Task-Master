@@ -245,7 +245,7 @@ export async function handleUserCreate(body) {
     profile = await upsertUserProfile(created.id, phoneFields);
   }
 
-  let ghl_sync = { status: "skipped", reason: "sync_ghl disabled" };
+  let ghl_sync = { status: "skipped", reason: "GHL sync disabled" };
 
   if (shouldSyncGhl(body) && !ghl_id) {
     ghl_sync = await trySyncUserCreateToGhl(created, { password });
@@ -348,7 +348,7 @@ export async function handleUserUpdate(body) {
     profile = await upsertUserProfile(userId, phoneFields);
   }
 
-  let ghl_sync = { status: "skipped", reason: "sync_ghl disabled" };
+  let ghl_sync = { status: "skipped", reason: "GHL sync disabled" };
 
   if (shouldSyncGhl(body)) {
     ghl_sync = await trySyncUserUpdateToGhl(updated, {
@@ -393,7 +393,7 @@ export async function handleUserDelete(body) {
     }
   }
 
-  let ghl_sync = { status: "skipped", reason: "sync_ghl disabled" };
+  let ghl_sync = { status: "skipped", reason: "GHL sync disabled" };
 
   if (shouldSyncGhl(body)) {
     ghl_sync = await trySyncUserDeleteToGhl(existing);

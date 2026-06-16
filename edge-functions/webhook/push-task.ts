@@ -75,6 +75,61 @@ async function markTaskSynced(taskId: number, ghlId: string) {
   if (error) throw new Error(error.message);
 }
 
+export async function deleteTaskFromGhl(
+  webhookRecord: Record<string, unknown>
+) {
+  const taskId = Number(webhookRecord.id);
+  if (!Number.isInteger(taskId)) throw new Error("Invalid task id");
+
+  const ghlTaskId = (() => {
+    const v = webhookRecord.ghl_id;
+    if (v == null) return undefined;
+    const s = String(v).trim();
+    return s || undefined;
+  })();
+
+  if (!ghlTaskId) {
+    return {
+      skipped: true,
+      reason: "Task has no ghl_id; not synced to GHL yet",
+    };
+  }
+
+  const contactId = webhookRecord.contact_id;
+  let contactGhlId: string | null = null;
+
+  if (contactId) {
+    const { data, error } = await supabase
+      .from("contacts")
+      .select("ghl_id")
+      .eq("id", contactId)
+      .maybeSingle();
+    if (!error && data?.ghl_id) {
+      contactGhlId = data.ghl_id;
+    }
+  }
+
+  if (!contactGhlId) {
+    return {
+      skipped: true,
+      reason: "Task contact has no ghl_id; cannot delete task in GHL",
+    };
+  }
+
+  const token = await getAccessToken();
+  const path = `/contacts/${contactGhlId}/tasks/${ghlTaskId}`;
+  const res = await ghlFetch(path, token, { method: "DELETE" });
+  await ghlJsonOrThrow(res, "GHL delete task");
+
+  return {
+    ghl_id: ghlTaskId,
+    action: "deleted",
+    ghl_method: "DELETE",
+    ghl_path: path,
+    ghl_contact_id: contactGhlId,
+  };
+}
+
 export async function pushTaskToGhl(webhookRecord: { id: unknown }) {
   const taskId = Number(webhookRecord.id);
   if (!Number.isInteger(taskId)) throw new Error("Invalid task id");

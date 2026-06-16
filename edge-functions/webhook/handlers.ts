@@ -1,5 +1,5 @@
-export { pushContactToGhl } from "./push-contact.ts";
-export { pushTaskToGhl } from "./push-task.ts";
+export { deleteContactFromGhl, pushContactToGhl } from "./push-contact.ts";
+export { deleteTaskFromGhl, pushTaskToGhl } from "./push-task.ts";
 
 /** GHL users: inbound sync only (v1). */
 export async function pushUserToGhl(record: Record<string, unknown>) {

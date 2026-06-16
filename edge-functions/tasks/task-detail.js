@@ -20,6 +20,7 @@ function mapDetailRow(row) {
     task_order: Number(row.task_order ?? 0),
     time_start_at: row.time_start_at ?? null,
     ghl_id: row.ghl_id,
+    enable_ghl_sync: row.enable_ghl_sync ?? true,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ...buildTimeSpent(row),

@@ -37,6 +37,7 @@ function mapListRow(row, descriptionTruncateLength) {
     task_order: Number(row.task_order ?? 0),
     ghl_id: row.ghl_id,
     data_source: row.data_source ?? null,
+    enable_ghl_sync: row.enable_ghl_sync ?? true,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ...buildTimeSpent(row),

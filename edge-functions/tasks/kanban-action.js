@@ -50,6 +50,7 @@ const getTasks = async (statusId, limit, offset, filters) => {
       tb.time_start_at,
       tb.task_order,
       tb.data_source,
+      tb.enable_ghl_sync,
       tb.created_at,
       tb.status_id,
 

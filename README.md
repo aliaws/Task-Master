@@ -78,6 +78,8 @@ Supabase exposes **two different URLs**. Do not mix them up.
 | `task_tags.task_id` | integer → `tasks.id` |
 | `tasks.assigned_to` | UUID (Supabase Auth user) |
 | `tasks.data_source` | `engage` (GHL) or `task_master` (app) |
+| `tasks.enable_ghl_sync` | boolean — `true` pushes to GHL (default), `false` skips |
+| `contacts.enable_ghl_sync` | boolean — same behavior |
 | `tasks.time_start_at` | timestamptz (nullable) — returned on `kanban`; updatable via PostgREST PATCH |
 | `tasks.task_order` | integer (default `0`) — display order within a kanban column; updated via `update_task_order` |
 | `task_sessions.task_id` | integer → `tasks.id` |
@@ -347,6 +349,7 @@ apikey: <anon-key>
 |-------|-------|
 | Task columns | `title`, `description`, `priority`, `status_id`, `tags`, `subtasks`, `attachments`, `due_date`, `time_start_at`, `assigned_to`, `contact_id` |
 | `data_source` | Set to **`task_master`** on app edits (required for email notifications) |
+| `enable_ghl_sync` | `true` (default) pushes to GHL; `false` skips |
 
 `last_changed_by_user_id` is set automatically on PATCH when the user sends a **logged-in JWT** (`Authorization: Bearer <access_token>`). You can also set it explicitly in the PATCH body. Used for **`changed_by_name`** in emails (falls back to **Someone** if missing).
 
@@ -401,7 +404,7 @@ Legacy **`phone`** E.164 still works.
 
 Users in **Supabase Auth** with phone in **`user_profiles`**. Optional outbound GHL sync via `ghl-user-sync.js`.
 
-**GHL sync (default on):** `"sync_ghl": false` to skip. Responses include `ghl_sync`:
+**GHL sync (default on):** `"enable_ghl_sync": true` pushes to GHL. Set `"enable_ghl_sync": false` to skip. Responses include `ghl_sync`:
 
 | `ghl_sync.status` | Meaning |
 |-------------------|---------|
@@ -409,7 +412,7 @@ Users in **Supabase Auth** with phone in **`user_profiles`**. Optional outbound 
 | `failed` | GHL error; Supabase operation still succeeded |
 | `skipped` | No GHL push |
 
-**Create** — required: `email`, `password`. Optional: `first_name`, `last_name`, `country_code_id`, `phone_local`, `phone`, `ghl_id`, `sync_ghl`.
+**Create** — required: `email`, `password`. Optional: `first_name`, `last_name`, `country_code_id`, `phone_local`, `phone`, `ghl_id`, `enable_ghl_sync` (default `true` pushes to GHL).
 
 **Update** — required: `id` (Auth UUID). Optional: `email`, `first_name`, `last_name`, `country_code_id`, `phone_local`, `phone`, `ghl_id`, `password`.
 
@@ -514,7 +517,7 @@ Requires **`SUPABASE_DB_URL`** and SMTP secrets on **webhook**.
 | `engage` | Row from GHL / `sync-ghl` |
 | `task_master` | Row created or edited in Task Master |
 
-Webhook **always pushes** inserts/updates. `data_source` is not used to skip.
+Webhook pushes inserts/updates **unless** `enable_ghl_sync` is `false` on the record (default `true`). `data_source` is not used to skip.
 
 **Loop prevention:** after push, only `ghl_id` + `updated_at` written back; webhook skips if only those changed.
 
@@ -627,7 +630,7 @@ On Edge Functions:
 ## Frontend integration checklist
 
 1. **Read tasks** → `POST /functions/v1/tasks` with `kanban`, `list`, or `task_detail`
-2. **Update tasks** → `PATCH /rest/v1/tasks?id=eq.{id}` with task columns + `data_source: task_master` (use **user JWT**, not anon key only)
+2. **Update tasks** → `PATCH /rest/v1/tasks?id=eq.{id}` with task columns + `data_source: task_master` (use **user JWT**, not anon key only). Set `enable_ghl_sync: false` to skip GHL push.
 3. **Timer tick** → `POST /functions/v1/task-timer` to append seconds
 4. **Reorder kanban** → `POST /functions/v1/tasks` with `action: update_task_order` and `tasks: [{ task_id, task_order }, ...]`
 5. **Do not PATCH** `time_spent`, `action`, `contact`, `time_spent_in_words`, or `description_truncated` to PostgREST

@@ -236,6 +236,7 @@ export const TASK_SELECT_CORE = sql`
   tb.task_order,
   tb.ghl_id,
   tb.data_source,
+  tb.enable_ghl_sync,
   tb.created_at,
   tb.updated_at,
   tb.status_id,

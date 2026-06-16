@@ -1,5 +1,5 @@
 /** Skip outbound when only bookkeeping / display-order fields changed. */
-const LOOP_GUARD_FIELDS = new Set(["ghl_id", "updated_at", "task_order"]);
+const LOOP_GUARD_FIELDS = new Set(["ghl_id", "updated_at", "task_order", "enable_ghl_sync"]);
 
 /** Skip task change log when only GHL sync bookkeeping fields changed. */
 const BOOKKEEPING_FIELDS = new Set(["ghl_id", "updated_at"]);
