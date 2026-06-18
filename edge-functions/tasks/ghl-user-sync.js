@@ -130,7 +130,7 @@ function withGhlPhone(payload, phone) {
 }
 
 export function shouldSyncGhl(body) {
-  return body?.sync_ghl !== false && body?.sync_ghl !== "false";
+  return body?.enable_ghl_sync !== false && body?.enable_ghl_sync !== "false";
 }
 
 export async function trySyncUserCreateToGhl(user, { password }) {

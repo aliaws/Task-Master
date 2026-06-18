@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { logWebhookEvent, newRequestId } from "./audit.ts";
 import { handleTaskEmailFromDbWebhook } from "./email-notify.ts";
-import { pushContactToGhl, pushUserToGhl } from "./handlers.ts";
-import { pushTaskToGhl } from "./push-task.ts";
+import { deleteContactFromGhl, pushContactToGhl, pushUserToGhl } from "./handlers.ts";
+import { deleteTaskFromGhl, pushTaskToGhl } from "./push-task.ts";
 import { shouldSkipOutbound } from "./loop-guard.ts";
 
 const corsHeaders = {
@@ -71,6 +71,19 @@ async function runPush(
     return { request_id: requestId, status: "skipped", reason: guard.reason };
   }
 
+  if (record.enable_ghl_sync === false || record.enable_ghl_sync === "false") {
+    await logWebhookEvent({
+      requestId,
+      entityType,
+      entityId,
+      eventType,
+      status: "skipped",
+      ghlId: record.ghl_id as string | undefined,
+      errorMessage: "enable_ghl_sync is false — GHL sync disabled for this record",
+    });
+    return { request_id: requestId, status: "skipped", reason: "enable_ghl_sync is false" };
+  }
+
   try {
     let result: Record<string, unknown>;
 
@@ -122,6 +135,75 @@ async function runPush(
   }
 }
 
+async function runDelete(
+  entityType: "contact" | "task" | "user",
+  record: Record<string, unknown>
+) {
+  const requestId = newRequestId();
+  const entityId = String(record.id ?? "");
+
+  await logWebhookEvent({
+    requestId,
+    entityType,
+    entityId,
+    eventType: "DELETE",
+    status: "started",
+  });
+
+  try {
+    let result: Record<string, unknown>;
+
+    if (entityType === "contact") {
+      result = await deleteContactFromGhl(record);
+    } else if (entityType === "task") {
+      result = await deleteTaskFromGhl(record);
+    } else {
+      result = {
+        skipped: true,
+        reason: "GHL users are not deleted outbound in v1",
+      };
+    }
+
+    if (result.skipped) {
+      await logWebhookEvent({
+        requestId,
+        entityType,
+        entityId,
+        eventType: "DELETE",
+        status: "skipped",
+        errorMessage: String(result.reason ?? "skipped"),
+      });
+      return { request_id: requestId, status: "skipped", ...result };
+    }
+
+    await logWebhookEvent({
+      requestId,
+      entityType,
+      entityId,
+      eventType: "DELETE",
+      status: "completed",
+      ghlId: String(result.ghl_id ?? ""),
+      payload: result,
+    });
+
+    return { request_id: requestId, status: "completed", ...result };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+
+    await logWebhookEvent({
+      requestId,
+      entityType,
+      entityId,
+      eventType: "DELETE",
+      status: "failed",
+      ghlId: record.ghl_id as string | undefined,
+      errorMessage: message,
+    });
+
+    throw err;
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -162,20 +244,37 @@ serve(async (req: Request) => {
   }
 
   if (eventType === "DELETE") {
-    const requestId = newRequestId();
-    await logWebhookEvent({
-      requestId,
-      entityType,
-      entityId: String(record.id),
-      eventType,
-      status: "skipped",
-      errorMessage: "DELETE not pushed to GHL in v1",
-    });
-    return json({ request_id: requestId, status: "skipped", reason: "DELETE not supported" });
+    let deleteResult: Record<string, unknown>;
+    let deleteError: string | null = null;
+
+    try {
+      deleteResult = await runDelete(entityType, record);
+    } catch (err) {
+      deleteError = err instanceof Error ? err.message : String(err);
+      deleteResult = { status: "failed", error: deleteError };
+    }
+
+    if (deleteError) {
+      return json({ success: false, error: deleteError, ...deleteResult }, 500);
+    }
+
+    return json({ success: true, ...deleteResult });
   }
 
   let ghlResult: Record<string, unknown>;
   let ghlError: string | null = null;
+
+  // Run task emails in parallel with GHL push to reduce edge-function timeouts.
+  const emailPromise =
+    entityType === "task" && eventType === "UPDATE"
+      ? handleTaskEmailFromDbWebhook(record, body.old_record ?? null).catch(
+          (err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error("task email notification error:", message);
+            return { error: message };
+          }
+        )
+      : null;
 
   try {
     ghlResult = await runPush(
@@ -189,19 +288,7 @@ serve(async (req: Request) => {
     ghlResult = { status: "failed", error: ghlError };
   }
 
-  let email: Record<string, unknown> | undefined;
-  if (entityType === "task" && eventType === "UPDATE") {
-    try {
-      email = await handleTaskEmailFromDbWebhook(
-        record,
-        body.old_record ?? null
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error("task email notification error:", message);
-      email = { error: message };
-    }
-  }
+  const email = emailPromise ? await emailPromise : undefined;
 
   if (ghlError) {
     return json(

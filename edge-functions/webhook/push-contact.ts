@@ -45,6 +45,32 @@ async function markContactSynced(contactId: string, ghlId: string) {
   if (error) throw new Error(error.message);
 }
 
+export async function deleteContactFromGhl(
+  webhookRecord: Record<string, unknown>
+) {
+  const contactId = String(webhookRecord.id);
+  const ghlId = str(webhookRecord.ghl_id);
+
+  if (!ghlId) {
+    return {
+      skipped: true,
+      reason: "Contact has no ghl_id; not synced to GHL yet",
+    };
+  }
+
+  const token = await getAccessToken();
+  const path = `/contacts/${ghlId}`;
+  const res = await ghlFetch(path, token, { method: "DELETE" });
+  await ghlJsonOrThrow(res, "GHL delete contact");
+
+  return {
+    ghl_id: ghlId,
+    action: "deleted",
+    ghl_method: "DELETE",
+    ghl_path: path,
+  };
+}
+
 export async function pushContactToGhl(webhookRecord: { id: unknown }) {
   const contactId = String(webhookRecord.id);
   const row = await fetchContactForPush(contactId);

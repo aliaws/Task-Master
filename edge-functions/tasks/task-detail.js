@@ -17,7 +17,10 @@ function mapDetailRow(row) {
     contact: buildContact(row),
     assigned_to: buildAssignee(row),
     due_date: row.due_date,
+    task_order: Number(row.task_order ?? 0),
+    time_start_at: row.time_start_at ?? null,
     ghl_id: row.ghl_id,
+    enable_ghl_sync: row.enable_ghl_sync ?? true,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ...buildTimeSpent(row),
@@ -41,6 +44,7 @@ export async function handleTaskDetail(body) {
   const rows = await sql`
     SELECT
       ${TASK_SELECT_CORE},
+      tb.time_start_at,
       tb.subtasks,
       tb.attachments,
       tb.tags
@@ -53,5 +57,37 @@ export async function handleTaskDetail(body) {
     return { data: null };
   }
 
-  return { data: mapDetailRow(rows[0]) };
+  const [logs, comments] = await Promise.all([
+    sql`
+      SELECT
+        id,
+        field_name,
+        old_display_value,
+        new_display_value,
+        changed_by_name,
+        is_viewed,
+        viewed_at,
+        created_at
+      FROM public.task_change_logs
+      WHERE task_id = ${taskIdInt}
+      ORDER BY created_at ASC
+      LIMIT 50
+    `,
+    sql`
+      SELECT
+        id,
+        content,
+        user_id,
+        display_name,
+        initials,
+        created_at,
+        updated_at
+      FROM public.task_comments
+      WHERE task_id = ${taskIdInt}
+      ORDER BY created_at ASC
+      LIMIT 100
+    `,
+  ]);
+
+  return { data: { ...mapDetailRow(rows[0]), logs, comments } };
 }

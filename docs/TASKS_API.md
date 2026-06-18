@@ -58,9 +58,9 @@ supabase db push
 
 ---
 
-## 1. `kanban` (unchanged)
+## 1. `kanban`
 
-Board columns keyed by `task_boards.name`. Same POST shape as before.
+Board columns keyed by `task_boards.name`. Tasks within each column are ordered by **`task_order` ASC** (then `created_at`). Each task row includes `task_order`.
 
 ### Body
 
@@ -167,6 +167,136 @@ Flat paginated task list for tables / mobile list views.
 - `overdue` — `due_date < now`, excluding completed board
 - `coming` — `due_date > now`
 
+### Task detail response includes `logs` and `comments`
+
+The `task_detail` response includes a `logs` array (task change history) and a `comments` array (user comments), in addition to all task fields.
+
+```json
+{
+  "success": true,
+  "action": "task_detail",
+  "data": {
+    "id": 42,
+    "...": "...",
+    "logs": [
+      {
+        "id": 105,
+        "field_name": "priority",
+        "old_display_value": "High",
+        "new_display_value": "Low",
+        "changed_by_name": "Ali",
+        "is_viewed": true,
+        "viewed_at": "2026-06-15T12:00:00.000Z",
+        "created_at": "2026-06-15T11:30:00.000Z"
+      }
+    ],
+    "comments": [
+      {
+        "id": 1,
+        "content": "Great progress!",
+        "user_id": "bba0a253-...",
+        "display_name": "Ali Abbas - AG",
+        "initials": "AA-A",
+        "created_at": "2026-06-16T12:00:00.000Z",
+        "updated_at": "2026-06-16T12:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 9. Task Comments
+
+Add, edit, and delete comments on tasks via the `tasks` edge function.
+
+| Action | Purpose |
+|--------|---------|
+| `comment_create` | Add a comment to a task |
+| `comment_update` | Edit a comment by `id` |
+| `comment_delete` | Delete a comment by `id` |
+
+### `comment_create`
+
+```json
+{
+  "action": "comment_create",
+  "task_id": 42,
+  "content": "Great work on this task!",
+  "user_id": "bba0a253-8eab-43ed-afdf-c9014ca319f2"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `task_id` | integer | yes | `tasks.id` |
+| `content` | string | yes | Comment text |
+| `user_id` | string | yes | Auth user UUID — `display_name` and `initials` auto-resolved from `auth.users` |
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "action": "comment_create",
+  "data": {
+    "id": 1,
+    "content": "Great work on this task!",
+    "user_id": "bba0a253-8eab-43ed-afdf-c9014ca319f2",
+    "display_name": "Ali Abbas - AG",
+    "initials": "AA-A",
+    "created_at": "2026-06-16T12:00:00.000Z",
+    "updated_at": "2026-06-16T12:00:00.000Z"
+  }
+}
+```
+
+### `comment_update`
+
+```json
+{
+  "action": "comment_update",
+  "id": 1,
+  "content": "Updated comment text"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | integer | yes | `task_comments.id` |
+| `content` | string | yes | New comment text |
+
+**Response:** full updated comment object.
+
+### `comment_delete`
+
+```json
+{
+  "action": "comment_delete",
+  "id": 1
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | integer | yes | `task_comments.id` to delete |
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "action": "comment_delete",
+  "deleted": true,
+  "id": 1
+}
+```
+
+Comments do **not** trigger GHL sync or email notifications.
+
+---
+
 ### Response row shape
 
 ```json
@@ -218,7 +348,7 @@ Flat paginated task list for tables / mobile list views.
 
 ## 3. `task_detail`
 
-Single task with subtasks, attachments, and tags.
+Single task with subtasks, attachments, tags, change logs, and comments.
 
 ### Body
 
@@ -247,9 +377,53 @@ Same fields as list (including `time_spent` and `time_spent_in_words` from `task
 
 `time_spent` is total `duration_seconds` summed from `public.task_sessions` (same as kanban).
 
+Response also includes `task_order` (integer).
+
 ---
 
-## 4. `boards`
+## 4. `update_task_order`
+
+Bulk update `tasks.task_order` for kanban drag-and-drop. Does **not** require `status_id`. Does not trigger task notification emails or GHL push (webhook skips when only `task_order` / `updated_at` change).
+
+### Body
+
+```json
+{
+  "action": "update_task_order",
+  "tasks": [
+    { "task_id": 123, "task_order": 0 },
+    { "task_id": 132, "task_order": 1 }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `tasks` | array | Required, 1–500 items |
+| `tasks[].task_id` | integer | `tasks.id` (alias: `id`) |
+| `tasks[].task_order` | integer | Non-negative; lower = higher in column |
+
+### Response
+
+```json
+{
+  "success": true,
+  "action": "update_task_order",
+  "updated": 2,
+  "tasks": [
+    { "task_id": 123, "task_order": 0 },
+    { "task_id": 132, "task_order": 1 }
+  ]
+}
+```
+
+If any `task_id` does not exist, it appears in `not_found`; other rows still update.
+
+Kanban reads use `ORDER BY task_order ASC` within each column.
+
+---
+
+## 5. `boards`
 
 List kanban columns with ids for building `filters.status`.
 
@@ -274,7 +448,7 @@ List kanban columns with ids for building `filters.status`.
 
 ---
 
-## 5. `tags` (autocomplete)
+## 6. `tags` (autocomplete)
 
 Search the `tags` catalog (see migration SQL).
 
@@ -312,7 +486,7 @@ Dev sample tags/assign SQL: `sample-data/` in the repo root.
 
 ---
 
-## 6. `contacts` (lookup)
+## 7. `contacts` (lookup)
 
 Search `public.contacts` for filter dropdowns and assignee pickers. Use **`filters`** to choose mode.
 
@@ -392,7 +566,7 @@ Empty `q` returns up to `limit` rows sorted by display name.
 
 ---
 
-## 7. `users` (lookup)
+## 8. `users` (lookup)
 
 Search **`auth.users`** (assignees synced from GHL). Same filter pattern as `contacts`.
 

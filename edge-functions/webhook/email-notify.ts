@@ -1,14 +1,7 @@
 import { sql } from "./email-db.ts";
 import { resolveCallerFromUserId, type TaskCaller } from "./email-caller.ts";
 import { sendSmtpEmail } from "./email-smtp.ts";
-import { shouldSkipOutbound } from "./loop-guard.ts";
-
-const WATCHED_FIELD_KEYS = [
-  "priority",
-  "assigned_to",
-  "due_date",
-  "status_id",
-] as const;
+import { shouldSkipTaskChangeLog } from "./loop-guard.ts";
 
 const WATCHED_FIELDS: Record<string, string> = {
   priority: "priority_changed",
@@ -17,11 +10,30 @@ const WATCHED_FIELDS: Record<string, string> = {
   status_id: "status_changed",
 };
 
+const LOGGED_FIELD_KEYS = [
+  "title",
+  "description",
+  "priority",
+  "status_id",
+  "due_date",
+  "assigned_to",
+  "contact_id",
+  "tags",
+  "subtasks",
+  "attachments",
+] as const;
+
 const FIELD_LABELS: Record<string, string> = {
+  title: "Title",
+  description: "Description",
   priority: "Priority",
   assigned_to: "Assignee",
   due_date: "Due date",
   status_id: "Status",
+  contact_id: "Contact",
+  tags: "Tags",
+  subtasks: "Subtasks",
+  attachments: "Attachments",
 };
 
 const HEADLINES: Record<string, string> = {
@@ -31,84 +43,89 @@ const HEADLINES: Record<string, string> = {
   status_changed: "{{changed_by_name}} updated the status",
 };
 
-type TaskSnapshot = {
-  id?: number;
-  title?: string | null;
-  priority?: string | null;
-  status_id?: number | null;
-  assigned_to?: string | null;
-  due_date?: string | null;
-};
+const JSON_FIELDS = new Set(["tags", "subtasks", "attachments"]);
 
-type DetectedChange = {
+type LoggedChange = {
   field: string;
-  templateKey: string;
+  emailTemplateKey?: string;
   oldVal: unknown;
   newVal: unknown;
 };
 
-function snapshotFromRecord(record: Record<string, unknown>): TaskSnapshot {
-  return {
-    id: record.id != null ? Number(record.id) : undefined,
-    title: record.title != null ? String(record.title) : null,
-    priority: record.priority != null ? String(record.priority) : null,
-    status_id: record.status_id != null ? Number(record.status_id) : null,
-    assigned_to: record.assigned_to != null ? String(record.assigned_to) : null,
-    due_date: record.due_date != null ? String(record.due_date) : null,
-  };
+type TaskSnapshot = {
+  assigned_to?: string | null;
+};
+
+function toPositiveInt(value: unknown, label: string): number {
+  const n =
+    typeof value === "bigint"
+      ? Number(value)
+      : typeof value === "string"
+        ? Number(value.trim())
+        : Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`Invalid ${label}: ${value}`);
+  }
+  return n;
 }
 
-function detectChangesFromDbRecords(
+function fieldValuesEqual(field: string, a: unknown, b: unknown) {
+  if (a == null && b == null) return true;
+  if (JSON_FIELDS.has(field)) {
+    return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  }
+  if (field === "due_date" || field === "time_start_at") {
+    const left = a ? new Date(String(a)).toISOString() : null;
+    const right = b ? new Date(String(b)).toISOString() : null;
+    return left === right;
+  }
+  return String(a ?? "") === String(b ?? "");
+}
+
+function detectLoggedChanges(
   oldRecord: Record<string, unknown>,
   record: Record<string, unknown>
-) {
-  const before = snapshotFromRecord(oldRecord);
-  const patch: Record<string, unknown> = {};
-  const changes: DetectedChange[] = [];
-
-  for (const field of WATCHED_FIELD_KEYS) {
+): LoggedChange[] {
+  const changes: LoggedChange[] = [];
+  for (const field of LOGGED_FIELD_KEYS) {
     const oldVal = oldRecord[field];
     const newVal = record[field];
     if (fieldValuesEqual(field, oldVal, newVal)) continue;
-
-    const templateKey = WATCHED_FIELDS[field];
-    patch[field] = newVal;
-    changes.push({ field, templateKey, oldVal, newVal });
+    changes.push({
+      field,
+      emailTemplateKey: WATCHED_FIELDS[field],
+      oldVal,
+      newVal,
+    });
   }
-
-  return { before, patch, changes };
+  return changes;
 }
 
-async function loadTaskEmailContext(taskId: number) {
-  const rows = await sql<
-    { title: string | null; last_changed_by_user_id: string | null }[]
-  >`
-    SELECT title, last_changed_by_user_id
-    FROM public.tasks
-    WHERE id = ${taskId}
-    LIMIT 1
-  `;
-  return rows[0] ?? null;
+function snapshotFromRecord(record: Record<string, unknown>): TaskSnapshot {
+  return {
+    assigned_to:
+      record.assigned_to != null ? String(record.assigned_to) : null,
+  };
 }
 
 function appBaseUrl() {
   return (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
 }
 
-function taskUrl(taskId: number) {
+/** View Task link — keeps notification_id for backward-compatible email URLs. */
+function taskUrl(taskId: unknown, logId: unknown) {
   const base = appBaseUrl();
-  if (!base) return `#task-${taskId}`;
-  return `${base}/?task=${taskId}&from=kanban`;
-}
-
-function fieldValuesEqual(field: string, a: unknown, b: unknown) {
-  if (a == null && b == null) return true;
-  if (field === "due_date") {
-    const left = a ? new Date(String(a)).toISOString() : null;
-    const right = b ? new Date(String(b)).toISOString() : null;
-    return left === right;
+  if (!base) {
+    throw new Error("APP_BASE_URL is not set — cannot build View Task link");
   }
-  return String(a ?? "") === String(b ?? "");
+  const url = new URL("/", `${base}/`);
+  url.searchParams.set("task", String(toPositiveInt(taskId, "task id")));
+  url.searchParams.set("from", "kanban");
+  url.searchParams.set(
+    "notification_id",
+    String(toPositiveInt(logId, "log id"))
+  );
+  return url.href;
 }
 
 function formatDueDate(value: unknown) {
@@ -134,6 +151,25 @@ function formatChangedAt(date = new Date()) {
     minute: "2-digit",
     timeZone: "UTC",
   });
+}
+
+function formatJsonField(value: unknown) {
+  if (value == null) return "None";
+  if (Array.isArray(value)) return `${value.length} item(s)`;
+  const s = JSON.stringify(value);
+  return s.length > 80 ? `${s.slice(0, 77)}...` : s;
+}
+
+async function loadTaskContext(taskId: number) {
+  const rows = await sql<
+    { title: string | null; last_changed_by_user_id: string | null }[]
+  >`
+    SELECT title, last_changed_by_user_id
+    FROM public.tasks
+    WHERE id = ${taskId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
 }
 
 async function loadStatusName(statusId: unknown) {
@@ -170,13 +206,26 @@ async function loadUserSummary(userId: unknown) {
   return { name: rows[0].display_name, email: rows[0].email ?? null };
 }
 
+async function loadContactName(contactId: unknown) {
+  if (!contactId) return "None";
+  const rows = await sql<{ display_name: string }[]>`
+    SELECT COALESCE(
+      NULLIF(TRIM(CONCAT_WS(' ', first_name, last_name)), ''),
+      email
+    ) AS display_name
+    FROM public.contacts
+    WHERE id = ${contactId}
+    LIMIT 1
+  `;
+  return rows[0]?.display_name ?? String(contactId);
+}
+
 async function resolveDisplayValue(field: string, value: unknown) {
   if (field === "status_id") return loadStatusName(value);
-  if (field === "assigned_to") {
-    const u = await loadUserSummary(value);
-    return u.name;
-  }
-  if (field === "due_date") return formatDueDate(value);
+  if (field === "assigned_to") return (await loadUserSummary(value)).name;
+  if (field === "contact_id") return loadContactName(value);
+  if (field === "due_date" || field === "time_start_at") return formatDueDate(value);
+  if (JSON_FIELDS.has(field)) return formatJsonField(value);
   if (value == null || value === "") return "None";
   return String(value);
 }
@@ -202,84 +251,92 @@ async function loadEmailTemplate(templateKey: string) {
   return rows[0] ?? null;
 }
 
-async function insertNotification(row: {
+async function insertTaskChangeLog(row: {
   request_id: string;
   task_id: number;
-  template_key: string;
   field_name: string;
   old_display_value: string;
   new_display_value: string;
+  old_value: unknown;
+  new_value: unknown;
   changed_by_user_id: string | null;
   changed_by_name: string;
-  recipient_email: string;
-  subject: string;
-  status: string;
+  email_template_key: string | null;
+  recipient_email: string | null;
+  email_subject: string | null;
+  email_status: string;
 }) {
   const rows = await sql<{ id: number }[]>`
-    INSERT INTO public.email_notifications (
+    INSERT INTO public.task_change_logs (
       request_id,
       task_id,
-      template_key,
       field_name,
       old_display_value,
       new_display_value,
+      old_value,
+      new_value,
       changed_by_user_id,
       changed_by_name,
+      email_template_key,
       recipient_email,
-      subject,
-      status
+      email_subject,
+      email_status
     ) VALUES (
       ${row.request_id},
       ${row.task_id},
-      ${row.template_key},
       ${row.field_name},
       ${row.old_display_value},
       ${row.new_display_value},
+      ${row.old_value == null ? null : sql.json(row.old_value)},
+      ${row.new_value == null ? null : sql.json(row.new_value)},
       ${row.changed_by_user_id},
       ${row.changed_by_name},
+      ${row.email_template_key},
       ${row.recipient_email},
-      ${row.subject},
-      ${row.status}
+      ${row.email_subject},
+      ${row.email_status}
     )
     RETURNING id
   `;
-  return rows[0]?.id;
+  const rawId = rows[0]?.id;
+  if (rawId == null) return undefined;
+  return toPositiveInt(rawId, "log id");
 }
 
-async function updateNotification(
+async function updateTaskChangeLogEmail(
   id: number,
   patch: {
-    status?: string;
-    provider_message_id?: string | null;
-    error_message?: string | null;
-    sent_at?: string | null;
+    email_status?: string;
+    email_provider_message_id?: string | null;
+    email_error_message?: string | null;
+    email_sent_at?: string | null;
   }
 ) {
   await sql`
-    UPDATE public.email_notifications
+    UPDATE public.task_change_logs
     SET
-      status = COALESCE(${patch.status ?? null}, status),
-      provider_message_id = COALESCE(${patch.provider_message_id ?? null}, provider_message_id),
-      error_message = ${patch.error_message ?? null},
-      sent_at = COALESCE(${patch.sent_at ?? null}, sent_at)
+      email_status = COALESCE(${patch.email_status ?? null}, email_status),
+      email_provider_message_id = COALESCE(
+        ${patch.email_provider_message_id ?? null},
+        email_provider_message_id
+      ),
+      email_error_message = ${patch.email_error_message ?? null},
+      email_sent_at = COALESCE(${patch.email_sent_at ?? null}, email_sent_at)
     WHERE id = ${id}
   `;
 }
 
 async function resolveRecipientEmail(
-  change: DetectedChange,
+  change: LoggedChange,
   afterTask: TaskSnapshot
 ) {
   if (change.field === "assigned_to") {
-    const user = await loadUserSummary(change.newVal);
-    return user.email;
+    return (await loadUserSummary(change.newVal)).email;
   }
-
-  const user = await loadUserSummary(afterTask.assigned_to);
-  return user.email;
+  return (await loadUserSummary(afterTask.assigned_to)).email;
 }
 
-async function sendChangeNotification({
+async function processChange({
   requestId,
   taskId,
   taskTitle,
@@ -290,38 +347,56 @@ async function sendChangeNotification({
   requestId: string;
   taskId: number;
   taskTitle: string;
-  change: DetectedChange;
+  change: LoggedChange;
   caller: TaskCaller;
   afterTask: TaskSnapshot;
 }) {
   const changedByName = caller.name || "Someone";
-  const recipientEmail = await resolveRecipientEmail(change, afterTask);
-  if (!recipientEmail) {
-    await insertNotification({
-      request_id: requestId,
-      task_id: taskId,
-      template_key: change.templateKey,
-      field_name: change.field,
-      old_display_value: await resolveDisplayValue(change.field, change.oldVal),
-      new_display_value: await resolveDisplayValue(change.field, change.newVal),
-      changed_by_user_id: caller.id,
-      changed_by_name: changedByName,
-      recipient_email: "skipped@notifications.local",
-      subject: `[skipped] ${taskTitle}`,
-      status: "skipped",
-    });
-    return;
-  }
-
   const [oldDisplay, newDisplay] = await Promise.all([
     resolveDisplayValue(change.field, change.oldVal),
     resolveDisplayValue(change.field, change.newVal),
   ]);
 
-  const changedAt = formatChangedAt();
-  const vars = {
+  const isEmailField = Boolean(change.emailTemplateKey);
+  let recipientEmail: string | null = null;
+  let emailSubject: string | null = null;
+  let emailStatus = "not_applicable";
+
+  if (isEmailField) {
+    recipientEmail = await resolveRecipientEmail(change, afterTask);
+    emailStatus = recipientEmail ? "pending" : "skipped";
+    emailSubject = recipientEmail
+      ? null
+      : `[skipped] ${taskTitle}`;
+  }
+
+  const logId = await insertTaskChangeLog({
+    request_id: requestId,
+    task_id: taskId,
+    field_name: change.field,
+    old_display_value: oldDisplay,
+    new_display_value: newDisplay,
+    old_value: change.oldVal,
+    new_value: change.newVal,
+    changed_by_user_id: caller.id,
     changed_by_name: changedByName,
-    headline: renderTemplate(HEADLINES[change.templateKey], {
+    email_template_key: change.emailTemplateKey ?? null,
+    recipient_email: recipientEmail ?? (isEmailField ? "skipped@notifications.local" : null),
+    email_subject: emailSubject,
+    email_status: emailStatus,
+  });
+
+  if (!logId || !isEmailField || !recipientEmail) return 0;
+
+  const template = await loadEmailTemplate(change.emailTemplateKey!);
+  if (!template) {
+    throw new Error(`Email template not found: ${change.emailTemplateKey}`);
+  }
+
+  const changedAt = formatChangedAt();
+  const baseVars = {
+    changed_by_name: changedByName,
+    headline: renderTemplate(HEADLINES[change.emailTemplateKey!], {
       changed_by_name: changedByName,
       new_value: newDisplay,
     }),
@@ -330,52 +405,44 @@ async function sendChangeNotification({
     old_value: oldDisplay,
     new_value: newDisplay,
     changed_at: changedAt,
-    task_url: taskUrl(taskId),
   };
+  emailSubject = renderTemplate(template.subject_template, baseVars);
 
-  const template = await loadEmailTemplate(change.templateKey);
-  if (!template) {
-    throw new Error(`Email template not found: ${change.templateKey}`);
-  }
-
-  const subject = renderTemplate(template.subject_template, vars);
-  const html = renderTemplate(template.body_html_template, vars);
-
-  const notificationId = await insertNotification({
-    request_id: requestId,
-    task_id: taskId,
-    template_key: change.templateKey,
-    field_name: change.field,
-    old_display_value: oldDisplay,
-    new_display_value: newDisplay,
-    changed_by_user_id: caller.id,
-    changed_by_name: changedByName,
-    recipient_email: recipientEmail,
-    subject,
-    status: "pending",
-  });
-
-  if (!notificationId) {
-    throw new Error("Failed to insert email notification row");
-  }
+  await sql`
+    UPDATE public.task_change_logs
+    SET email_subject = ${emailSubject}
+    WHERE id = ${logId}
+  `;
 
   try {
+    const html = renderTemplate(template.body_html_template, {
+      ...baseVars,
+      task_url: taskUrl(taskId, logId),
+    });
     const messageId = await sendSmtpEmail({
       to: recipientEmail,
-      subject,
+      subject: emailSubject,
       html,
     });
-    await updateNotification(notificationId, {
-      status: "sent",
-      provider_message_id: messageId,
-      sent_at: new Date().toISOString(),
-      error_message: null,
+    await updateTaskChangeLogEmail(logId, {
+      email_status: "sent",
+      email_provider_message_id: messageId,
+      email_sent_at: new Date().toISOString(),
+      email_error_message: null,
     });
+    return 1;
   } catch (err) {
-    await updateNotification(notificationId, {
-      status: "failed",
-      error_message: err instanceof Error ? err.message : String(err),
-    });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`task change log ${logId} email failed:`, message);
+    try {
+      await updateTaskChangeLogEmail(logId, {
+        email_status: "failed",
+        email_error_message: message,
+      });
+    } catch (updateErr) {
+      console.error(`failed to mark log ${logId} as failed:`, updateErr);
+    }
+    return 0;
   }
 }
 
@@ -383,17 +450,13 @@ export async function handleTaskEmailFromDbWebhook(
   record: Record<string, unknown>,
   oldRecord: Record<string, unknown> | null
 ) {
-  if (!oldRecord) {
-    return { skipped: true, reason: "no old_record (insert)" };
+  const skip = shouldSkipTaskChangeLog(record, oldRecord);
+  if (skip.skip) {
+    return { skipped: true, reason: skip.reason };
   }
 
   if (String(record.data_source ?? "") !== "task_master") {
     return { skipped: true, reason: "not task_master" };
-  }
-
-  const guard = shouldSkipOutbound(record, oldRecord);
-  if (guard.skip) {
-    return { skipped: true, reason: guard.reason };
   }
 
   const taskId = Number(record.id);
@@ -401,29 +464,25 @@ export async function handleTaskEmailFromDbWebhook(
     throw new Error("Invalid task id in webhook record");
   }
 
-  const { before, patch, changes } = detectChangesFromDbRecords(
-    oldRecord,
-    record
-  );
+  const changes = detectLoggedChanges(oldRecord!, record);
   if (!changes.length) {
-    return { skipped: true, reason: "no watched field changes" };
+    return { skipped: true, reason: "no logged field changes" };
   }
 
   const requestId = crypto.randomUUID();
-  const taskRow = await loadTaskEmailContext(taskId);
+  const taskRow = await loadTaskContext(taskId);
   const caller = await resolveCallerFromUserId(
     taskRow?.last_changed_by_user_id ?? record.last_changed_by_user_id
   );
-
-  const afterTask = { ...before, ...patch } as TaskSnapshot;
+  const afterTask = snapshotFromRecord(record);
   const taskTitle =
     taskRow?.title ??
     (record.title != null ? String(record.title) : null) ??
-    before.title ??
     `Task #${taskId}`;
 
+  let emailed = 0;
   for (const change of changes) {
-    await sendChangeNotification({
+    emailed += await processChange({
       requestId,
       taskId,
       taskTitle,
@@ -433,5 +492,5 @@ export async function handleTaskEmailFromDbWebhook(
     });
   }
 
-  return { processed: changes.length };
+  return { processed: changes.length, emailed };
 }

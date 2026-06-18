@@ -6,25 +6,33 @@ import {
   truncateDescription,
 } from "./utils.js";
 
-/**
- * Original kanban board API — unchanged behaviour.
- */
+const escapeLikePattern = (value) =>
+  String(value).replace(/[%_\\]/g, "\\$&");
+
 const buildFilters = (filters) => {
   if (!filters) return sql``;
 
-  const entries = Object.entries(filters).filter(
-    ([, val]) =>
-      val?.value !== undefined &&
-      val?.value !== null &&
-      val.value !== ""
-  );
+  const entries = Object.entries(filters).filter(([, val]) => {
+    if (val?.value === undefined || val?.value === null) return false;
+    if (Array.isArray(val.value)) return val.value.length > 0;
+    return val.value !== "";
+  });
 
   if (entries.length === 0) return sql``;
 
   let result = sql``;
 
   entries.forEach(([column, val], index) => {
-    const condition = sql`${sql(column)} = ${val.value}`;
+    let condition;
+    if (column === "title") {
+      const escaped = escapeLikePattern(val.value);
+      condition = sql`tb.title ILIKE ${"%" + escaped + "%"}`;
+    } else if (column === "assigned_to" || column === "assign") {
+      const ids = Array.isArray(val.value) ? val.value : [val.value];
+      condition = sql`tb.assigned_to IN ${sql(ids)}`;
+    } else {
+      condition = sql`${sql(column)} = ${val.value}`;
+    }
 
     if (index === 0) {
       result = condition;
@@ -36,16 +44,7 @@ const buildFilters = (filters) => {
   return sql`AND ${result}`;
 };
 
-const getTasks = async (
-  statusId,
-  limit,
-  offset,
-  filters,
-  order
-) => {
-  const orderBy =
-    order === "ASC" ? sql`tb.created_at ASC` : sql`tb.created_at DESC`;
-
+const getTasks = async (statusId, limit, offset, filters) => {
   return await sql`
     SELECT
       tb.id,
@@ -57,7 +56,9 @@ const getTasks = async (
       tb.attachments,
       tb.due_date,
       tb.time_start_at,
+      tb.task_order,
       tb.data_source,
+      tb.enable_ghl_sync,
       tb.created_at,
       tb.status_id,
 
@@ -95,7 +96,7 @@ const getTasks = async (
 
     GROUP BY tb.id, c.id, u.id
 
-    ORDER BY ${orderBy}, tb.priority DESC
+    ORDER BY tb.task_order ASC, tb.id ASC
     LIMIT ${limit}
     OFFSET ${offset};
   `;
@@ -142,7 +143,7 @@ export async function handleKanban(body) {
 
   for (const status of statuses) {
     const [tasks, count] = await Promise.all([
-      getTasks(status.id, limit, offset, filters, order),
+      getTasks(status.id, limit, offset, filters),
       getCount(status.id, filters),
     ]);
 
