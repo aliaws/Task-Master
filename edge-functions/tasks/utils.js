@@ -30,17 +30,17 @@ export function formatHMS(totalSeconds) {
   return `${hours} hour, ${minutes} minutes, ${secs} seconds`;
 }
 
-/** "John Doe" -> "JD", "Madonna" -> "M" */
+/** "John Doe" -> "JD", "Madonna" -> "MA" */
 export function initialsFromDisplayName(displayName) {
   if (!displayName || typeof displayName !== "string") return null;
 
   const parts = displayName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return null;
   if (parts.length === 1) {
-    return parts[0].charAt(0).toUpperCase();
+    return parts[0].slice(0, 2).toUpperCase();
   }
 
-  return parts.map((p) => p.charAt(0).toUpperCase()).join("");
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
 
 export function buildAssignee(row) {
