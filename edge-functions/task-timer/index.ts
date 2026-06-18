@@ -37,6 +37,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
 
     const task_id = Number(body.task_id);
+    const type = body.type || "TRACKED";
 
     const hasDuration =
       body.duration_seconds !== undefined && body.duration_seconds !== null;
@@ -54,10 +55,17 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      await sql`
-        INSERT INTO task_sessions (task_id, duration_seconds)
-        VALUES (${task_id}, ${duration_seconds})
-      `;
+     await sql`
+      INSERT INTO task_sessions (
+        task_id,
+        duration_seconds,
+        type
+      )
+      VALUES (
+        ${task_id},
+        ${duration_seconds},
+        ${type}
+      )`;
     }
 
     const totalResult = await sql`
@@ -79,3 +87,4 @@ Deno.serve(async (req: Request) => {
     await sql.end();
   }
 });
+
