@@ -21,6 +21,7 @@ function formatHMS(totalSeconds: number) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
+
   return `${hours} hour, ${minutes} minutes, ${secs} seconds`;
 }
 
@@ -37,10 +38,16 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
 
     const task_id = Number(body.task_id);
+    const type = body.type || "TRACKED";
+    const user_id = body.user_id || null;
 
     const hasDuration =
-      body.duration_seconds !== undefined && body.duration_seconds !== null;
-    const duration_seconds = hasDuration ? Number(body.duration_seconds) : null;
+      body.duration_seconds !== undefined &&
+      body.duration_seconds !== null;
+
+    const duration_seconds = hasDuration
+      ? Number(body.duration_seconds)
+      : null;
 
     if (!task_id) {
       return json({ error: "task_id required" }, 400);
@@ -55,8 +62,20 @@ Deno.serve(async (req: Request) => {
       }
 
       await sql`
-        INSERT INTO task_sessions (task_id, duration_seconds)
-        VALUES (${task_id}, ${duration_seconds})
+        INSERT INTO task_sessions (
+          task_id,
+          duration_seconds,
+          type,
+          updated_by,
+          updated_at
+        )
+        VALUES (
+          ${task_id},
+          ${duration_seconds},
+          ${type},
+          ${user_id},
+          NOW()
+        )
       `;
     }
 
@@ -70,11 +89,17 @@ Deno.serve(async (req: Request) => {
     const time_spent_in_words = formatHMS(time_spent);
 
     return json({
+      task_id,
       time_spent,
       time_spent_in_words,
     });
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return json(
+      {
+        error: err instanceof Error ? err.message : String(err),
+      },
+      500
+    );
   } finally {
     await sql.end();
   }
