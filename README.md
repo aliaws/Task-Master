@@ -15,7 +15,7 @@ Task-Master/
 │   ├── sync-from-ghl/     # GHL webhooks → Supabase (real-time sync)
 │   ├── tasks/             # Task board API (read + user CRUD + comments + mentions)
 │   ├── task-timer/        # Append time sessions; return total time_spent
-│   ├── notification/      # Notification feed (mentions, task changes, comments)
+│   ├── notification-feed/ # Notification feed (mentions, task changes, comments)
 │   ├── notification-view/ # Mark task_change_logs viewed (first open from email)
 │   ├── webhook/           # Outbound GHL sync + task email notifications
 │   ├── refresh-token/     # GHL OAuth token refresh
@@ -223,9 +223,6 @@ Manual SQL fallback: [sample-data/03_country_codes_user_profiles.sql](sample-dat
 | `user_update` | Update Supabase Auth user; optional GHL sync |
 | `user_delete` | Delete Auth user; unassigns tasks by default |
 | `update_task_order` | Bulk update `tasks.task_order` for kanban drag-and-drop (no `status_id` in payload) |
-| `comment_create` | Add a comment to a task |
-| `comment_update` | Edit a comment by `id` |
-| `comment_delete` | Delete a comment by `id` |
 
 Default action if omitted: **`kanban`**.
 
@@ -324,29 +321,66 @@ Unknown `task_id` values are listed in `not_found` (other rows still update). Ma
 
 #### Task comments
 
-| Action | Payload | Purpose |
-|--------|---------|---------|
-| `comment_create` | `{ "task_id": 42, "content": "...", "user_id": "auth-uuid", "parent_id": 5 }` | Add comment to task (optional `parent_id` for replies) |
-| `comment_update` | `{ "id": 1, "content": "edited text" }` | Update comment content |
-| `comment_delete` | `{ "id": 1 }` | Delete comment |
+Comments are managed via direct PostgREST calls (no edge function actions).
 
-**`comment_create`** — `task_id` (integer), `content` (required), `user_id` (required auth UUID). `display_name` and `initials` are auto-resolved from `auth.users`.
+**Create comment:**
 
-Optional `parent_id`: integer ID of a top-level comment to reply to. Replying to a reply is **not allowed** (no deep nesting).
-
-**@mentions** — comment content is scanned for `[Name]` patterns. Each match is resolved against `auth.users` by `display_name` (first_name + last_name) then email local-part. Mention events are logged to `task_change_logs` with `field_name = 'mention'` and an SMTP email is sent to the mentioned user using the `mention` email template.
-
-**Response:**
-
-```json
-{ "success": true, "action": "comment_create", "data": { "id": 1, "content": "[Ali Abbas] check this", "user_id": "bba0a253-...", "display_name": "Ali Abbas - AG", "initials": "AA-A", "parent_id": null, "created_at": "...", "updated_at": "..." } }
+```
+POST https://<project>.supabase.co/rest/v1/task_comments
+Content-Type: application/json
+apikey: <anon-key>
+Prefer: return=representation
 ```
 
-**`comment_update`** — `id` (integer comment id), `content` (required new text). Returns full updated comment.
+```json
+{
+  "task_id": 815,
+  "user_id": "bba0a253-8eab-43ed-afdf-c9014ca319f2",
+  "display_name": "Ali Abbas - AG",
+  "initials": "AA",
+  "content": "[Ali Abbas] check this comment",
+  "parent_id": null
+}
+```
 
-**`comment_delete`** — `id` (integer comment id). Returns `{ "deleted": true, "id": 1 }`.
+| Field | Required | Notes |
+|-------|----------|-------|
+| `task_id` | yes | Integer task ID |
+| `user_id` | yes | Auth user UUID |
+| `display_name` | yes | Must be resolved client-side from auth.users |
+| `initials` | yes | First letter of first two words, e.g. `"Ali Abbas"` → `"AA"` |
+| `content` | yes | Comment text; use `[Name]` for @mentions |
+| `parent_id` | no | Integer parent comment ID (top-level only, no nested replies) |
 
-Comments do **not** trigger GHL sync. No JWT verification — `user_id` is trusted from the request body.
+**Update comment:**
+
+```
+PATCH https://<project>.supabase.co/rest/v1/task_comments?id=eq.1
+Content-Type: application/json
+apikey: <anon-key>
+Prefer: return=representation
+```
+
+```json
+{ "content": "updated text", "updated_at": "2026-06-19T12:00:00.000Z" }
+```
+
+You must set `updated_at` yourself.
+
+**Delete comment:**
+
+```
+DELETE https://<project>.supabase.co/rest/v1/task_comments?id=eq.13
+apikey: <anon-key>
+```
+
+Child comments (`parent_id = deleted_id`) are deleted automatically by `ON DELETE CASCADE`.
+
+**RLS:** All operations allow anon key. UPDATE/DELETE require a matching `user_id` JWT for ownership checks.
+
+**@mentions** — comment content is scanned for `[Name]` patterns. Each match is resolved against `auth.users` by `display_name` (first_name + last_name) then email local-part. Mention events are logged to `task_change_logs` with `field_name = 'mention'` and an SMTP email is sent to the mentioned user. This is handled by the **webhook** function via a Supabase Database Webhook on `task_comments` INSERT, not by the tasks edge function.
+
+Comments do **not** trigger GHL sync.
 
 **Update tasks** (PostgREST — triggers GHL + email via Supabase DB Webhook on `tasks` UPDATE):
 
@@ -376,7 +410,7 @@ apikey: <anon-key>
 
 Do **not** send `time_spent` — use **`task-timer`**.
 
-Set secrets in **Supabase Dashboard → Edge Functions → Secrets**, then deploy **`webhook`** and **`tasks`** (SMTP secrets on both). For local dev, use `.env` (see **Environment**).
+Set secrets in **Supabase Dashboard → Edge Functions → Secrets**, then deploy **`webhook`**, **`tasks`**, and **`notification-feed`** (SMTP secrets on webhook + notification-feed). For local dev, use `.env` (see **Environment**).
 
 **Task change log (async via Supabase Database Webhook):** when a tracked field (`title`, `description`, `priority`, `status_id`, `due_date`, `assigned_to`, `contact_id`, `tags`, `subtasks`, `attachments`) changes on a row with **`data_source: task_master`**, the **Supabase DB Webhook** on `tasks` UPDATE calls **`webhook`**, which writes to **`task_change_logs`** and sends SMTP emails when `priority`, `status_id`, `due_date`, or `assigned_to` change. `time_start_at` and `task_order` changes are **not** logged. Editor name comes from **`last_changed_by_user_id`**. Requires migrations through `20260617130000_task_change_logs_rename.sql`.
 
@@ -507,13 +541,14 @@ supabase functions deploy webhook
 
 ```
 edge-functions/webhook/
-├── index.ts           # GHL DB webhook + task email on tasks UPDATE
-├── push-task.ts       # tasks → GHL
-├── push-contact.ts    # contacts → GHL
-├── email-notify.ts    # task_change_logs + SMTP for watched field changes
-├── email-smtp.ts      # nodemailer
-├── email-caller.ts    # resolve changed_by_name from last_changed_by_user_id
-├── email-db.ts        # postgres for email_templates / task_change_logs
+├── index.ts              # Routes task_comments + entity webhooks
+├── push-task.ts          # tasks → GHL
+├── push-contact.ts       # contacts → GHL
+├── email-notify.ts       # task_change_logs + SMTP for watched field changes
+├── comment-mention.ts    # Mention parsing + email on task_comments INSERT
+├── email-smtp.ts         # nodemailer
+├── email-caller.ts       # resolve changed_by_name from last_changed_by_user_id
+├── email-db.ts           # postgres for email_templates / task_change_logs
 ├── ghl-client.ts
 ├── ghl-payloads.ts
 ├── loop-guard.ts
@@ -526,6 +561,7 @@ edge-functions/webhook/
 |-------|--------|-----|
 | `contacts` | Insert, Update | `https://<project>.supabase.co/functions/v1/webhook` |
 | `tasks` | Insert, Update | `https://<project>.supabase.co/functions/v1/webhook` |
+| `task_comments` | Insert, Delete | `https://<project>.supabase.co/functions/v1/webhook` |
 
 Optional header: `x-webhook-secret: <WEBHOOK_SECRET>`
 
@@ -554,15 +590,15 @@ See [docs/WEBHOOK_API.md](docs/WEBHOOK_API.md).
 
 ---
 
-### notification
+### notification-feed
 
-Source: `edge-functions/notification/index.js` — notification feed and batch mark-read.
+Source: `edge-functions/notification-feed/index.ts` — notification feed and batch mark-read.
 
 ```bash
-supabase functions deploy notification
+supabase functions deploy notification-feed
 ```
 
-**URL:** `POST https://<project>.supabase.co/functions/v1/notification`
+**URL:** `POST https://<project>.supabase.co/functions/v1/notification-feed`
 
 Requires **`SUPABASE_DB_URL`**. **CORS:** `OPTIONS` preflight, `POST` only.
 
@@ -585,12 +621,14 @@ Returns mentions, task changes on your assigned tasks, and comments on your task
   "data": [
     {
       "type": "mention",
-      "log_id": 123,
+      "notification_id": 123,
       "task_id": 42,
+      "task_title": "Set up CI/CD pipeline",
       "comment_id": 5,
-      "content_preview": "Hey @ali, check this!",
+      "content_preview": "[Ali Abbas] check this!",
+      "initials": "AA",
       "field_name": "mention",
-      "changed_by_name": "John",
+      "changed_by_name": "Ali Abbas",
       "is_viewed": false,
       "created_at": "..."
     }
@@ -598,6 +636,12 @@ Returns mentions, task changes on your assigned tasks, and comments on your task
   "meta": { "count": 10, "page": 1, "limit": 20, "has_more": false }
 }
 ```
+
+- `type`: `"mention"` | `"task_change"` | `"comment"`
+- `notification_id`: always non-null — uses `task_change_logs.id` for mention/task_change, falls back to `comment_id` for comment type
+- `initials`: first letter of first two words of `changed_by_name`, e.g. `"Ali Abbas - AG"` → `"AA"`
+- `field_name` for `task_change` type is filtered to: `assigned_to`, `status_id`, `due_date`, `priority`
+- Self-notifications (user changed their own task) are excluded
 
 **Batch mark as read:**
 
@@ -608,7 +652,7 @@ Returns mentions, task changes on your assigned tasks, and comments on your task
 }
 ```
 
-Accepts `log_ids`, `ids`, or `notification_ids`. Idempotent.
+Accepts `log_ids`, `ids`, or `notification_ids`. Idempotent. Only applies to `task_change_logs` entries (comment-type notifications have no log entry to mark read).
 
 ---
 
@@ -658,6 +702,7 @@ Also accepts `notification_id` (same id) for backward-compatible email links.
 ```bash
 supabase functions serve webhook --env-file .env
 supabase functions serve tasks --env-file .env
+supabase functions serve notification-feed --env-file .env
 ```
 
 **Production:** set secrets in **Supabase Dashboard → Edge Functions → Secrets** and deploy each function.
@@ -668,18 +713,18 @@ On Edge Functions:
 |----------|-------------|
 | `SUPABASE_URL` | All |
 | `SUPABASE_SERVICE_ROLE_KEY` | **webhook**, **tasks** (user GHL sync) |
-| `SUPABASE_DB_URL` | **tasks**, **task-timer**, **notification**, **notification-view**, **webhook** (email SQL) |
-| `SMTP_HOST` | **webhook**, **tasks** (mention emails) — e.g. `smtp.gmail.com` |
-| `SMTP_PORT` | **webhook**, **tasks** — e.g. `465` |
-| `SMTP_USER` | **webhook**, **tasks** — SMTP login email |
-| `SMTP_PASS` | **webhook**, **tasks** — Gmail App Password (required) |
-| `MAIL_FROM` | **webhook**, **tasks** — sender email, e.g. `ali@yourdomain.com` |
+| `SUPABASE_DB_URL` | **tasks**, **task-timer**, **notification-feed**, **notification-view**, **webhook** (email SQL) |
+| `SMTP_HOST` | **webhook**, **notification-feed** — e.g. `smtp.gmail.com` |
+| `SMTP_PORT` | **webhook**, **notification-feed** — e.g. `465` |
+| `SMTP_USER` | **webhook**, **notification-feed** — SMTP login email |
+| `SMTP_PASS` | **webhook**, **notification-feed** — Gmail App Password (required) |
+| `MAIL_FROM` | **webhook**, **notification-feed** — sender email, e.g. `ali@yourdomain.com` |
 | `MAIL_FROM_NAME` | Optional — inbox sender name; defaults to **`Task Master`** |
-| `APP_BASE_URL` | **webhook**, **tasks** — app URL for email links |
+| `APP_BASE_URL` | **webhook**, **notification-feed** — app URL for email links |
 | `SMTP_SECURE` | Optional — `true` / `false`; auto `true` when port is `465` |
 | `GHL_USER_TYPE` | Optional — GHL user create (default `account`) |
 | `GHL_USER_ROLE` | Optional — GHL user create (default `user`) |
-| `WEBHOOK_SECRET` | Optional — **webhook** (GHL DB webhook + internal email invoke) |
+| `WEBHOOK_SECRET` | Required — **webhook** (GHL DB webhook + comment mention webhook validation) |
 
 **Vault secrets** (via `get_vault_secrets` RPC):
 
@@ -700,10 +745,10 @@ On Edge Functions:
 | `password-validate-send-otp.ts` | Hono; password check + OTP; CORS + `x-api-key` |
 | `task-timer/index.ts` | Append `task_sessions`; return total time |
 | `sync-from-ghl/index.js` | GHL webhook receiver — TaskCreate/Complete/Delete, Contact CRUD, User CRUD |
-| `notification/index.js` | Notification feed (mentions, task changes, comments) + batch mark-read |
+| `notification-feed/index.ts` | Notification feed (mentions, task changes, comments) + batch mark-read |
 | `notification-view/index.ts` | Mark `task_change_logs` viewed on first email link open |
 | `refresh-token/index.ts` | GHL OAuth refresh |
-| `webhook/index.ts` | GHL push + task emails on `tasks` UPDATE (Supabase DB Webhook) |
+| `webhook/index.ts` | GHL push + task emails + mention emails (Supabase DB Webhook) |
 | `sync-task-ghl-localy.js` | Local only, not deployed |
 
 ---
@@ -717,9 +762,9 @@ On Edge Functions:
 5. **Do not PATCH** `time_spent`, `action`, `contact`, `time_spent_in_words`, or `description_truncated` to PostgREST
 6. **Users** → `user_create` / `user_update` / `user_delete` on the **tasks** function
 7. **Email link open** → on `/?task={id}&from=kanban&notification_id={id}`, `POST /functions/v1/notification-view` with `{ "log_id": <id> }` or `{ "notification_id": <id> }` (fire-and-forget)
-8. **Comments** → `comment_create` / `comment_update` / `comment_delete` on the **tasks** function. Use `parent_id` for replies (top-level comments only). Use `[Name]` syntax for @mentions.
-9. **Notification feed** → `POST /functions/v1/notification` with `{ "action": "list", "user_id": "<uuid>" }`
-10. **Mark notifications read** → `POST /functions/v1/notification` with `{ "action": "mark_read", "log_ids": [...] }`
+8. **Comments** → use PostgREST directly: `POST /rest/v1/task_comments` (create), `PATCH /rest/v1/task_comments?id=eq.{id}` (update), `DELETE /rest/v1/task_comments?id=eq.{id}` (delete) with `apikey: <anon-key>`. Include `user_id`, `display_name`, `initials` resolved client-side. Use `parent_id` for replies (top-level only). Use `[Name]` syntax for @mentions.
+9. **Notification feed** → `POST /functions/v1/notification-feed` with `{ "action": "list", "user_id": "<uuid>" }`
+10. **Mark notifications read** → `POST /functions/v1/notification-feed` with `{ "action": "mark_read", "log_ids": [...] }`
 11. **Email link open** — mention email URLs include `&comment_id={id}`; parse and scroll to that comment on the task detail page.
 
 **Supabase JS (update task):**

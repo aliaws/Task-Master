@@ -19,6 +19,14 @@ function json(res, status = 200) {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function initialsFromDisplayName(displayName: string): string | null {
+  if (!displayName || typeof displayName !== "string") return null;
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+  const target = parts.slice(0, 2);
+  return target.map((p) => p.charAt(0).toUpperCase()).join("");
+}
+
 function parsePagination(body) {
   const page = Math.max(1, Number(body.page ?? 1) || 1);
   const limit = Math.min(100, Math.max(1, Number(body.limit ?? 20) || 20));
@@ -46,56 +54,65 @@ async function handleList(body) {
     (
       SELECT
         'mention' AS type,
-        id AS log_id,
-        task_id,
-        (new_value->>'comment_id')::int AS comment_id,
-        new_value->>'snippet' AS content_preview,
-        field_name,
-        old_display_value,
-        new_display_value,
-        changed_by_name,
-        is_viewed,
-        viewed_at,
-        created_at
-      FROM public.task_change_logs
-      WHERE field_name = 'mention' AND recipient_email = ${email}
+        l.id AS log_id,
+        l.task_id,
+        t.title AS task_title,
+        (l.new_value->>'comment_id')::int AS comment_id,
+        l.new_value->>'snippet' AS content_preview,
+        l.field_name,
+        l.old_display_value,
+        l.new_display_value,
+        l.changed_by_name,
+        l.is_viewed,
+        l.viewed_at,
+        l.created_at
+      FROM public.task_change_logs l
+      LEFT JOIN public.tasks t ON t.id = l.task_id
+      WHERE l.field_name = 'mention' AND l.recipient_email = ${email}
+        AND l.changed_by_user_id IS DISTINCT FROM t.assigned_to
     )
     UNION ALL
     (
       SELECT
         'task_change' AS type,
-        id AS log_id,
-        task_id,
+        l.id AS log_id,
+        l.task_id,
+        t.title AS task_title,
         NULL::int AS comment_id,
         NULL::text AS content_preview,
-        field_name,
-        old_display_value,
-        new_display_value,
-        changed_by_name,
-        is_viewed,
-        viewed_at,
-        created_at
-      FROM public.task_change_logs
-      WHERE task_id IN (SELECT id FROM public.tasks WHERE assigned_to = ${userId})
-        AND field_name != 'mention'
+        l.field_name,
+        l.old_display_value,
+        l.new_display_value,
+        l.changed_by_name,
+        l.is_viewed,
+        l.viewed_at,
+        l.created_at
+      FROM public.task_change_logs l
+      LEFT JOIN public.tasks t ON t.id = l.task_id
+      WHERE l.task_id IN (SELECT id FROM public.tasks WHERE assigned_to = ${userId})
+        AND l.field_name IN ('assigned_to', 'status_id', 'due_date', 'priority')
+        AND l.changed_by_user_id IS DISTINCT FROM t.assigned_to
     )
     UNION ALL
     (
       SELECT
         'comment' AS type,
         NULL::bigint AS log_id,
-        task_id,
-        id AS comment_id,
-        content AS content_preview,
+        c.task_id,
+        t.title AS task_title,
+        c.id AS comment_id,
+        c.content AS content_preview,
         NULL::text AS field_name,
         NULL::text AS old_display_value,
-        content AS new_display_value,
-        display_name AS changed_by_name,
+        c.content AS new_display_value,
+        c.display_name AS changed_by_name,
         false AS is_viewed,
         NULL::timestamptz AS viewed_at,
-        created_at
-      FROM public.task_comments
-      WHERE task_id IN (SELECT id FROM public.tasks WHERE assigned_to = ${userId})
+        c.created_at
+      FROM public.task_comments c
+      LEFT JOIN public.tasks t ON t.id = c.task_id
+      WHERE c.task_id IN (SELECT id FROM public.tasks WHERE assigned_to = ${userId})
+        AND c.user_id IS DISTINCT FROM t.assigned_to
     )
     ORDER BY created_at DESC
     LIMIT ${limit}
@@ -104,15 +121,21 @@ async function handleList(body) {
 
   const countRows = await sql`
     SELECT COUNT(*)::int AS total FROM (
-      SELECT id::bigint FROM public.task_change_logs
-      WHERE field_name = 'mention' AND recipient_email = ${email}
+      SELECT l.id::bigint FROM public.task_change_logs l
+      LEFT JOIN public.tasks t ON t.id = l.task_id
+      WHERE l.field_name = 'mention' AND l.recipient_email = ${email}
+        AND l.changed_by_user_id IS DISTINCT FROM t.assigned_to
       UNION ALL
-      SELECT id::bigint FROM public.task_change_logs
-      WHERE task_id IN (SELECT id FROM public.tasks WHERE assigned_to = ${userId})
-        AND field_name != 'mention'
+      SELECT l.id::bigint FROM public.task_change_logs l
+      LEFT JOIN public.tasks t ON t.id = l.task_id
+      WHERE l.task_id IN (SELECT id FROM public.tasks WHERE assigned_to = ${userId})
+        AND l.field_name IN ('assigned_to', 'status_id', 'due_date', 'priority')
+        AND l.changed_by_user_id IS DISTINCT FROM t.assigned_to
       UNION ALL
-      SELECT id::bigint FROM public.task_comments
-      WHERE task_id IN (SELECT id FROM public.tasks WHERE assigned_to = ${userId})
+      SELECT c.id::bigint FROM public.task_comments c
+      LEFT JOIN public.tasks t ON t.id = c.task_id
+      WHERE c.task_id IN (SELECT id FROM public.tasks WHERE assigned_to = ${userId})
+        AND c.user_id IS DISTINCT FROM t.assigned_to
     ) sub
   `;
 
@@ -124,14 +147,16 @@ async function handleList(body) {
     action: "list",
     data: raw.map((r) => ({
       type: r.type,
-      log_id: r.log_id != null ? Number(r.log_id) : null,
+      notification_id: Number(r.log_id ?? r.comment_id),
       task_id: Number(r.task_id),
+      task_title: r.task_title ?? null,
       comment_id: r.comment_id != null ? Number(r.comment_id) : null,
       content_preview: r.content_preview ?? null,
       field_name: r.field_name ?? null,
       old_display_value: r.old_display_value ?? null,
       new_display_value: r.new_display_value ?? null,
       changed_by_name: r.changed_by_name ?? null,
+      initials: initialsFromDisplayName(r.changed_by_name ?? ""),
       is_viewed: Boolean(r.is_viewed),
       viewed_at: r.viewed_at ?? null,
       created_at: r.created_at,
