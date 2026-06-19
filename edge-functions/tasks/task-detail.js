@@ -57,7 +57,7 @@ export async function handleTaskDetail(body) {
     return { data: null };
   }
 
-  const [logs, comments] = await Promise.all([
+  const [logs, flatComments] = await Promise.all([
     sql`
       SELECT
         id,
@@ -70,6 +70,7 @@ export async function handleTaskDetail(body) {
         created_at
       FROM public.task_change_logs
       WHERE task_id = ${taskIdInt}
+        AND field_name != 'mention'
       ORDER BY created_at ASC
       LIMIT 50
     `,
@@ -80,6 +81,7 @@ export async function handleTaskDetail(body) {
         user_id,
         display_name,
         initials,
+        parent_id,
         created_at,
         updated_at
       FROM public.task_comments
@@ -88,6 +90,28 @@ export async function handleTaskDetail(body) {
       LIMIT 100
     `,
   ]);
+
+  const comments = flatComments.reduce((acc, c) => {
+    const entry = {
+      id: c.id,
+      content: c.content,
+      user_id: c.user_id ?? null,
+      display_name: c.display_name || null,
+      initials: c.initials || null,
+      parent_id: c.parent_id ?? null,
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+    };
+    if (c.parent_id) {
+      const parent = acc.find((p) => p.id === c.parent_id);
+      if (parent) {
+        parent.replies.push(entry);
+      }
+    } else {
+      acc.push({ ...entry, replies: [] });
+    }
+    return acc;
+  }, []);
 
   return { data: { ...mapDetailRow(rows[0]), logs, comments } };
 }
