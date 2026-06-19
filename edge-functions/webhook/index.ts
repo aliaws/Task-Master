@@ -4,6 +4,7 @@ import { handleTaskEmailFromDbWebhook } from "./email-notify.ts";
 import { deleteContactFromGhl, pushContactToGhl, pushUserToGhl } from "./handlers.ts";
 import { deleteTaskFromGhl, pushTaskToGhl } from "./push-task.ts";
 import { shouldSkipOutbound } from "./loop-guard.ts";
+import { handleCommentInsert, handleCommentDelete } from "./comment-mention.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -231,6 +232,18 @@ serve(async (req: Request) => {
 
   if (!record?.id) {
     return json({ error: "Missing record.id in payload" }, 400);
+  }
+
+  if (table === "task_comments") {
+    if (eventType === "INSERT") {
+      const result = await handleCommentInsert(record);
+      return json({ success: true, ...result });
+    }
+    if (eventType === "DELETE") {
+      const result = await handleCommentDelete(record);
+      return json({ success: true, ...result });
+    }
+    return json({ success: true, skipped: true, reason: `unsupported event type ${eventType}` });
   }
 
   const entityType = TABLE_ENTITY[table as keyof typeof TABLE_ENTITY];
