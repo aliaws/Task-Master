@@ -1,0 +1,26 @@
+# https://supabase.com/docs/guides/functions/function-configuration
+
+[functions.sync-ghl]
+entrypoint = "../edge-functions/sync-ghl/index.js"
+# Set true if you call this with service role / cron only (no user JWT)
+verify_jwt = false
+
+[functions.tasks]
+entrypoint = "../edge-functions/tasks/index.js"
+verify_jwt = false
+
+[functions.task-timer]
+entrypoint = "../edge-functions/task-timer/index.ts"
+verify_jwt = false
+
+[functions.refresh-token]
+entrypoint = "../edge-functions/refresh-token/index.ts"
+verify_jwt = false
+
+[functions.webhook]
+entrypoint = "../edge-functions/webhook/index.ts"
+verify_jwt = false
+
+[functions.notification-view]
+entrypoint = "../edge-functions/notification-view/index.ts"
+verify_jwt = false
