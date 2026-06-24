@@ -21,6 +21,10 @@ verify_jwt = false
 entrypoint = "../edge-functions/webhook/index.ts"
 verify_jwt = false
 
+[functions.notification-feed]
+entrypoint = "../edge-functions/notification-feed/index.ts"
+verify_jwt = false
+
 [functions.notification-view]
 entrypoint = "../edge-functions/notification-view/index.ts"
 verify_jwt = false
